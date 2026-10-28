@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 
 project(
     hyprplasma
-    LANGUAGES CXX
+    LANGUAGES CXX C
     VERSION 0.1.0
     DESCRIPTION "Hyprland plugin template built with CMake"
 )
@@ -20,6 +20,12 @@ endif()
 # Plugins are shared objects loaded into the Hyprland process.
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+add_library(${PROJECT_NAME} SHARED
+    src/main.cpp
+    src/hyprplasma.cpp
+    src/plasmaproto-shell.cpp
+)
+
 # ---------------------------------------------------------------------------
 # Hyprland (from the system)
 # ---------------------------------------------------------------------------
@@ -34,12 +40,69 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(HYPRAND REQUIRED IMPORTED_TARGET hyprland)
 
 # ---------------------------------------------------------------------------
+# wayland protocols
+# ---------------------------------------------------------------------------
+find_package(PlasmaWaylandProtocols CONFIG REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(WAYLAND_SERVER REQUIRED
+    IMPORTED_TARGET wayland-server
+)
+find_program(WAYLAND_SCANNER
+    NAMES wayland-scanner
+    REQUIRED
+)
+# Select the protocol XML to implement.
+set(PLASMA_PROTOCOL plasma-window-management plasma-shell plasma-virtual-desktop)
+
+
+set(PLASMA_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+file(MAKE_DIRECTORY "${PLASMA_GENERATED_DIR}")
+
+foreach(protocol IN LISTS PLASMA_PROTOCOLS)
+    set(xml
+        "${PLASMA_WAYLAND_PROTOCOLS_DIR}/${protocol}.xml"
+    )
+    set(header
+        "${PLASMA_GENERATED_DIR}/${protocol}-server-protocol.h"
+    )
+    set(code
+        "${PLASMA_GENERATED_DIR}/${protocol}-protocol.c"
+    )
+
+    if(NOT EXISTS "${xml}")
+        message(FATAL_ERROR "Protocol XML not found: ${xml}")
+    endif()
+
+    add_custom_command(
+        OUTPUT "${header}" "${code}"
+
+        COMMAND "${WAYLAND_SCANNER}"
+            server-header "${xml}" "${header}"
+
+        COMMAND "${WAYLAND_SCANNER}"
+            private-code "${xml}" "${code}"
+
+        DEPENDS "${xml}"
+        VERBATIM
+    )
+
+    target_sources(${PROJECT_NAME} PRIVATE
+        "${header}"
+        "${code}"
+    )
+endforeach()
+
+target_include_directories(${PROJECT_NAME} PRIVATE
+    "${PLASMA_GENERATED_DIR}"
+)
+
+target_link_libraries(${PROJECT_NAME} PRIVATE
+    PkgConfig::WAYLAND_SERVER
+)
+
+# ---------------------------------------------------------------------------
 # Plugin target
 # ---------------------------------------------------------------------------
-add_library(${PROJECT_NAME} SHARED
-    src/main.cpp
-    src/hyprplasma.cpp
-)
 
 target_compile_options(${PROJECT_NAME} PRIVATE
     -Wall -Wextra -Wpedantic
