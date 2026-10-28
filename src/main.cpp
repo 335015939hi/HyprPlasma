@@ -16,10 +16,12 @@
 // https://wiki.hypr.land/hyprland-plugins/development/getting-started
 //            /usr/include/x86_64-linux-gnu/hyprland/src/plugins/PluginAPI.hpp
 
-#include "hyprland/src/helpers/Color.hpp"
-#include "hyprland/src/plugins/PluginAPI.hpp"
+#include <hyprland/src/helpers/Color.hpp>
+#include <hyprland/src/plugins/PluginAPI.hpp>
 
 #include <string>
+
+#include "hyprplasma.hpp"
 
 namespace {
 
@@ -45,11 +47,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO pluginInit(HANDLE handle) {
   HyprlandAPI::addNotification(g_pluginHandle, "hyprplasma: plugin loaded",
                                CHyprColor(0.0F, 1.0F, 0.0F, 1.0F), 3000.0F);
 
-  // TODO: register your own features here, e.g.
-  //   HyprlandAPI::addDispatcherV2(g_pluginHandle, "hyprplasma_example",
-  //   [](std::string args) -> SDispatchResult { ... });
-  //   HyprlandAPI::registerHyprCtlCommand(g_pluginHandle, {...});
-  //   HyprlandAPI::addConfigValueV2(g_pluginHandle, ...);
+  hyprplasma::init();
 
   return PLUGIN_DESCRIPTION_INFO{
       .name = "hyprplasma",
@@ -67,5 +65,6 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO pluginInit(HANDLE handle) {
 // due to a crash. All hooks dispatched by Hyprland are removed automatically.
 APICALL EXPORT void pluginExit() {
   // TODO: release your resources here.
+  hyprplasma::exit();
   g_pluginHandle = nullptr;
 }

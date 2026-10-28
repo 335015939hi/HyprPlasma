@@ -38,6 +38,7 @@ pkg_check_modules(HYPRAND REQUIRED IMPORTED_TARGET hyprland)
 # ---------------------------------------------------------------------------
 add_library(${PROJECT_NAME} SHARED
     src/main.cpp
+    src/hyprplasma.cpp
 )
 
 target_compile_options(${PROJECT_NAME} PRIVATE
