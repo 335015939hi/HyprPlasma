@@ -5,5 +5,5 @@
 
 namespace hyprplasma {
 void init(void) { Log::logger->log(Log::CRIT, "hello world!"); }
-void exit(void);
+void exit(void) {}
 } // namespace hyprplasma
