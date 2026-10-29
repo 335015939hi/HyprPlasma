@@ -1,10 +1,12 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <desktop/DesktopTypes.hpp>
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/desktop/view/WLSurface.hpp>
 #include <hyprland/src/desktop/view/types/GeometricMovable.hpp>
 #include <hyprland/src/protocols/core/Compositor.hpp>
+#include <hyprland/src/protocols/core/Output.hpp>
 #include <new>
 #include <unordered_map>
 #include <wayland-server-core.h>
@@ -25,6 +27,7 @@ struct PlasmaSurfaceState {
   bool set_position_pending = false;
   int32_t y = 0;
   SP<CWLSurfaceResource> hyprSurface;
+  PHLMONITORREF monitor;
   struct {
     CHyprSignalListener commit;
   } listeners;
@@ -133,12 +136,41 @@ static void surfaceDestroy(wl_client *, wl_resource *resource) {
   wl_resource_destroy(resource);
 }
 
-static void surfaceSetOutput(wl_client *, wl_resource *, wl_resource *output) {
+static void surfaceSetOutput(wl_client *, wl_resource *resource,
+                             wl_resource *output) {
   hyprplasma::log(Log::INFO, "surfaceSetOutput {}", (void *)output);
+  auto *state =
+      static_cast<PlasmaSurfaceState *>(wl_resource_get_user_data(resource));
+
+  if (!state)
+    return;
+
+  auto outputResource = CWLOutputResource::fromResource(output);
+
+  if (!outputResource) {
+    hyprplasma::log(Log::WARN,
+                    "set_output: failed to resolve wl_output resource");
+    return;
+  }
+
+  auto monitor = outputResource->m_monitor.lock();
+
+  if (!monitor) {
+    hyprplasma::log(Log::WARN, "set_output: monitor is unavailable");
+    return;
+  }
+
+  state->monitor = outputResource->m_monitor;
+
+  hyprplasma::log(Log::INFO, "set_output: assigned monitor");
+
+  // Retry an earlier position request if one is pending.
+  if (state->set_position_pending)
+    applyPosition(state);
 }
 
-static void surfaceSetPosition(wl_client *client, wl_resource *resource,
-                               int32_t x, int32_t y) {
+static void surfaceSetPosition(wl_client *, wl_resource *resource, int32_t x,
+                               int32_t y) {
   hyprplasma::log(Log::INFO, "surfaceSetPosition {} {}", x, y);
   auto *state =
       static_cast<PlasmaSurfaceState *>(wl_resource_get_user_data(resource));
