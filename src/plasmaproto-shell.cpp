@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <debug/log/Logger.hpp>
 #include <hyprland/src/Compositor.hpp>
+#include <hyprland/src/protocols/core/Compositor.hpp>
 #include <new>
 #include <unordered_map>
 #include <wayland-server-core.h>
@@ -16,14 +17,15 @@
 struct PlasmaSurfaceState {
   wl_resource *resource = nullptr;
   wl_resource *surface = nullptr;
-
   wl_listener surfaceDestroyListener{};
-
   bool roleSet = false;
   uint32_t role = 0;
-
   int32_t x = 0;
   int32_t y = 0;
+  SP<CWLSurfaceResource> hyprSurface;
+  struct {
+    CHyprSignalListener commit;
+  } listeners;
 };
 
 static void handleGetSurface(wl_client *client, wl_resource *shellResource,
@@ -56,7 +58,6 @@ static void bindPlasmaShell(wl_client *client, void *data, uint32_t version,
 static void onPlasmaSurfaceDestroyed(wl_resource *resource) {
   auto *state =
       static_cast<PlasmaSurfaceState *>(wl_resource_get_user_data(resource));
-
   if (!state)
     return;
 
@@ -64,6 +65,9 @@ static void onPlasmaSurfaceDestroyed(wl_resource *resource) {
     wl_list_remove(&state->surfaceDestroyListener.link);
     g_surfaces.erase(state->surface);
   }
+
+  state->listeners.commit.reset();
+  state->hyprSurface.reset();
 
   delete state;
 }
@@ -164,10 +168,16 @@ static void handleGetSurface(wl_client *client, wl_resource *shellResource,
 
   auto *resource = wl_resource_create(client, &org_kde_plasma_surface_interface,
                                       static_cast<int>(version), id);
-
   if (!resource) {
     delete state;
     wl_client_post_no_memory(client);
+    return;
+  }
+
+  auto hyprSurface = CWLSurfaceResource::fromResource(surface);
+  if (!hyprSurface) {
+    wl_resource_post_error(shellResource, 0,
+                           "Could not resolve Hyprland wl_surface");
     return;
   }
 
@@ -180,6 +190,17 @@ static void handleGetSurface(wl_client *client, wl_resource *shellResource,
 
   g_surfaces.emplace(surface, state);
   wl_resource_add_destroy_listener(surface, &state->surfaceDestroyListener);
+
+  state->hyprSurface = std::move(hyprSurface);
+
+  state->listeners.commit = state->hyprSurface->m_events.commit.listen([state] {
+    const auto &current = state->hyprSurface->m_current;
+
+    Log::logger->log(
+        Log::CRIT, "Plasma surface: role={}, mapped={}, size={}x{}, texture={}",
+        state->role, state->hyprSurface->m_mapped, current.size.x,
+        current.size.y, static_cast<bool>(current.texture));
+  });
 }
 
 namespace hyprplasma {
