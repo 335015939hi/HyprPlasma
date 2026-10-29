@@ -1,7 +1,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <debug/log/Logger.hpp>
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/protocols/core/Compositor.hpp>
 #include <new>
@@ -117,7 +116,7 @@ static void surfaceSetRole(wl_client *, wl_resource *resource, uint32_t role) {
   default:
     return;
   }
-  Log::logger->log(Log::CRIT, "found role {}", role);
+  hyprplasma::log(Log::INFO, "found role {}", role);
 }
 
 static void surfaceSetPanelBehavior(wl_client *, wl_resource *, uint32_t) {}
@@ -196,8 +195,8 @@ static void handleGetSurface(wl_client *client, wl_resource *shellResource,
   state->listeners.commit = state->hyprSurface->m_events.commit.listen([state] {
     const auto &current = state->hyprSurface->m_current;
 
-    Log::logger->log(
-        Log::CRIT, "Plasma surface: role={}, mapped={}, size={}x{}, texture={}",
+    hyprplasma::log(
+        Log::INFO, "Plasma surface: role={}, mapped={}, size={}x{}, texture={}",
         state->role, state->hyprSurface->m_mapped, current.size.x,
         current.size.y, static_cast<bool>(current.texture));
   });

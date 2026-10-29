@@ -44,10 +44,7 @@ APICALL EXPORT std::string pluginAPIVersion() { return HYPRLAND_API_VERSION; }
 APICALL EXPORT PLUGIN_DESCRIPTION_INFO pluginInit(HANDLE handle) {
   g_pluginHandle = handle;
 
-  // Example: notify the user that the plugin loaded.
-  // CHyprColor(r, g, b, a) with components in [0, 1].
-  HyprlandAPI::addNotification(g_pluginHandle, "hyprplasma: plugin loaded",
-                               CHyprColor(0.0F, 1.0F, 0.0F, 1.0F), 3000.0F);
+  hyprplasma::log(Log::INFO, "loaded");
 
   hyprplasma::init();
 
@@ -69,4 +66,5 @@ APICALL EXPORT void pluginExit() {
   // TODO: release your resources here.
   hyprplasma::exit();
   g_pluginHandle = nullptr;
+  hyprplasma::log(Log::INFO, "unloaded");
 }
