@@ -8,7 +8,7 @@
 
 #include "plasmaproto-shell.hpp"
 
-static wl_global *g_plasmaShell = nullptr;
+static struct wl_global *g_plasmaShell = nullptr;
 
 static void bindPlasmaShell(wl_client *client, void *data, uint32_t version,
                             uint32_t id) {
@@ -19,7 +19,7 @@ namespace hyprplasma {
 namespace proto {
 void plasma_shell_init(void) {
   g_plasmaShell = wl_global_create(g_pCompositor->m_wlDisplay,
-                                   &org_kde_plasma_shell_interface, 22, nullptr,
+                                   &org_kde_plasma_shell_interface, 8, nullptr,
                                    bindPlasmaShell);
   HyprlandAPI::addNotification(g_pluginHandle, "g_plasmaShell",
                                CHyprColor(0.0F, 1.0F, 0.0F, 1.0F), 3000.0F);
