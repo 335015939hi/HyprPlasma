@@ -2,6 +2,8 @@
 #include <algorithm>
 #include <cstdint>
 #include <hyprland/src/Compositor.hpp>
+#include <hyprland/src/desktop/view/WLSurface.hpp>
+#include <hyprland/src/desktop/view/types/GeometricMovable.hpp>
 #include <hyprland/src/protocols/core/Compositor.hpp>
 #include <new>
 #include <unordered_map>
@@ -54,6 +56,39 @@ static void bindPlasmaShell(wl_client *client, void *data, uint32_t version,
   wl_resource_set_implementation(resource, &s_shellImpl, data, nullptr);
 }
 
+static bool applyPosition(PlasmaSurfaceState *state) {
+  if (!state || !state->hyprSurface)
+    return false;
+
+  // Resolve Hyprland's higher-level surface wrapper.
+  auto hlSurface = Desktop::View::CWLSurface::fromResource(state->hyprSurface);
+
+  if (!hlSurface)
+    return false;
+
+  // Find the compositor view associated with this surface.
+  auto view = hlSurface->view();
+
+  if (!view) {
+    hyprplasma::log(Log::DEBUG, "Plasma surface has no compositor view yet");
+    return false;
+  }
+
+  // Not every view supports arbitrary movement.
+  auto movable = dynamicPointerCast<Desktop::View::IGeometricMovable>(view);
+
+  if (!movable) {
+    hyprplasma::log(Log::DEBUG, "Plasma surface view type is not movable");
+    return false;
+  }
+
+  // set_position coordinates are already global.
+  movable->move(
+      Vector2D{static_cast<double>(state->x), static_cast<double>(state->y)});
+
+  return true;
+}
+
 static void onPlasmaSurfaceDestroyed(wl_resource *resource) {
   auto *state =
       static_cast<PlasmaSurfaceState *>(wl_resource_get_user_data(resource));
@@ -93,7 +128,18 @@ static void surfaceDestroy(wl_client *, wl_resource *resource) {
 
 static void surfaceSetOutput(wl_client *, wl_resource *, wl_resource *) {}
 
-static void surfaceSetPosition(wl_client *, wl_resource *, int32_t, int32_t) {}
+static void surfaceSetPosition(wl_client *client, wl_resource *resource,
+                               int32_t x, int32_t y) {
+  hyprplasma::log(Log::INFO, "position request {} {}", x, y);
+  auto *state =
+      static_cast<PlasmaSurfaceState *>(wl_resource_get_user_data(resource));
+  if (!state)
+    return;
+
+  state->x = x;
+  state->y = y;
+  applyPosition(state);
+}
 
 static void surfaceSetRole(wl_client *, wl_resource *resource, uint32_t role) {
   auto *state =
