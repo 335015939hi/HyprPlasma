@@ -91,7 +91,7 @@ static bool applyPosition(PlasmaSurfaceState *state) {
   movable->move(
       Vector2D{static_cast<double>(state->x), static_cast<double>(state->y)});
 
-  state->set_position_pending = true;
+  state->set_position_pending = false;
   return true;
 }
 
@@ -267,8 +267,12 @@ static void handleGetSurface(wl_client *client, wl_resource *shellResource,
   state->listeners.commit = state->hyprSurface->m_events.commit.listen([state] {
     const auto &current = state->hyprSurface->m_current;
 
-    // try move to correct position
+    // try move to correct position, if needed
+    // BUG: adding the guard stops initial position working properly , don't
+    // know why
+    // if (state->set_position_pending) {
     applyPosition(state);
+    // }
     // resize the window
     auto hlSurface =
         Desktop::View::CWLSurface::fromResource(state->hyprSurface);
