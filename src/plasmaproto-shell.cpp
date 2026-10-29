@@ -62,7 +62,6 @@ static bool applyPosition(PlasmaSurfaceState *state) {
 
   // Resolve Hyprland's higher-level surface wrapper.
   auto hlSurface = Desktop::View::CWLSurface::fromResource(state->hyprSurface);
-
   if (!hlSurface)
     return false;
 
@@ -258,6 +257,20 @@ static void handleGetSurface(wl_client *client, wl_resource *shellResource,
 
   state->listeners.commit = state->hyprSurface->m_events.commit.listen([state] {
     const auto &current = state->hyprSurface->m_current;
+
+    // resize the window
+    auto hlSurface =
+        Desktop::View::CWLSurface::fromResource(state->hyprSurface);
+    if (hlSurface) {
+      auto view = hlSurface->view();
+      if (view) {
+        auto movable =
+            dynamicPointerCast<Desktop::View::IGeometricMovable>(view);
+        if (movable) {
+          movable->resize(current.size);
+        }
+      }
+    }
 
     hyprplasma::log(
         Log::INFO, "Plasma surface: role={}, mapped={}, size={}x{}, texture={}",
