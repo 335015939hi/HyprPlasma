@@ -76,13 +76,11 @@ static bool applyPosition(PlasmaSurfaceState *state) {
 
   // Not every view supports arbitrary movement.
   auto movable = dynamicPointerCast<Desktop::View::IGeometricMovable>(view);
-
   if (!movable) {
     hyprplasma::log(Log::DEBUG, "Plasma surface view type is not movable");
     return false;
   }
 
-  // set_position coordinates are already global.
   movable->move(
       Vector2D{static_cast<double>(state->x), static_cast<double>(state->y)});
 
@@ -123,14 +121,17 @@ static void onWlSurfaceDestroyed(wl_listener *, void *data) {
 }
 
 static void surfaceDestroy(wl_client *, wl_resource *resource) {
+  hyprplasma::log(Log::INFO, "surfaceDestroy");
   wl_resource_destroy(resource);
 }
 
-static void surfaceSetOutput(wl_client *, wl_resource *, wl_resource *) {}
+static void surfaceSetOutput(wl_client *, wl_resource *, wl_resource *output) {
+  hyprplasma::log(Log::INFO, "surfaceSetOutput {}", (void *)output);
+}
 
 static void surfaceSetPosition(wl_client *client, wl_resource *resource,
                                int32_t x, int32_t y) {
-  hyprplasma::log(Log::INFO, "position request {} {}", x, y);
+  hyprplasma::log(Log::INFO, "surfaceSetPosition {} {}", x, y);
   auto *state =
       static_cast<PlasmaSurfaceState *>(wl_resource_get_user_data(resource));
   if (!state)
@@ -138,10 +139,12 @@ static void surfaceSetPosition(wl_client *client, wl_resource *resource,
 
   state->x = x;
   state->y = y;
+
   applyPosition(state);
 }
 
 static void surfaceSetRole(wl_client *, wl_resource *resource, uint32_t role) {
+  hyprplasma::log(Log::INFO, "surfaceSetRole {}", role);
   auto *state =
       static_cast<PlasmaSurfaceState *>(wl_resource_get_user_data(resource));
   if (state->roleSet) {
@@ -165,19 +168,34 @@ static void surfaceSetRole(wl_client *, wl_resource *resource, uint32_t role) {
   hyprplasma::log(Log::INFO, "found role {}", role);
 }
 
-static void surfaceSetPanelBehavior(wl_client *, wl_resource *, uint32_t) {}
+static void surfaceSetPanelBehavior(wl_client *, wl_resource *,
+                                    uint32_t behaviour) {
+  hyprplasma::log(Log::INFO, "surfaceSetPanelBehavior {}", behaviour);
+}
 
-static void surfaceSetSkipTaskbar(wl_client *, wl_resource *, uint32_t) {}
+static void surfaceSetSkipTaskbar(wl_client *, wl_resource *, uint32_t skip) {
+  hyprplasma::log(Log::INFO, "surfaceSetSkipTaskbar {}", skip);
+}
 
-static void surfacePanelAutoHideHide(wl_client *, wl_resource *) {}
+static void surfacePanelAutoHideHide(wl_client *, wl_resource *) {
+  hyprplasma::log(Log::INFO, "surfacePanelAutoHideHide");
+}
 
-static void surfacePanelAutoHideShow(wl_client *, wl_resource *) {}
+static void surfacePanelAutoHideShow(wl_client *, wl_resource *) {
+  hyprplasma::log(Log::INFO, "surfacePanelAutoHideShow");
+}
 
-static void surfaceSetPanelTakesFocus(wl_client *, wl_resource *, uint32_t) {}
+static void surfaceSetPanelTakesFocus(wl_client *, wl_resource *, uint32_t) {
+  hyprplasma::log(Log::INFO, "surfaceSetPanelTakesFocus");
+}
 
-static void surfaceSetSkipSwitcher(wl_client *, wl_resource *, uint32_t) {}
+static void surfaceSetSkipSwitcher(wl_client *, wl_resource *, uint32_t skip) {
+  hyprplasma::log(Log::INFO, "surfaceSetSkipSwitcher {}", skip);
+}
 
-static void surfaceOpenUnderCursor(wl_client *, wl_resource *) {}
+static void surfaceOpenUnderCursor(wl_client *, wl_resource *) {
+  hyprplasma::log(Log::INFO, "surfaceOpenUnderCursor");
+}
 
 static const struct org_kde_plasma_surface_interface s_surfaceImpl = {
     .destroy = surfaceDestroy,
