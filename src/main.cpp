@@ -23,12 +23,14 @@
 
 #include "hyprplasma.hpp"
 
-namespace {
+using namespace hyprplasma;
+
+namespace hyprplasma {
 
 // The handle Hyprland gives us at init; keep it for every API call.
 HANDLE g_pluginHandle = nullptr;
 
-} // namespace
+} // namespace hyprplasma
 
 /* -----------------------------------------------------------------------
  * REQUIRED entry points

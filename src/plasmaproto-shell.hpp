@@ -3,8 +3,9 @@
 
 namespace hyprplasma {
 namespace proto {
-void plasma_shell(void);
-}
+void plasma_shell_init(void);
+void plasma_shell_exit(void);
+} // namespace proto
 } // namespace hyprplasma
 
 #endif

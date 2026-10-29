@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.20)
 
 project(
     hyprplasma
@@ -37,13 +37,12 @@ add_library(${PROJECT_NAME} SHARED
 # See: https://wiki.hypr.land/hyprland-plugins/development/getting-started
 #      https://github.com/hyprwm/hyprland-plugins
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(HYPRAND REQUIRED IMPORTED_TARGET hyprland)
+pkg_check_modules(HYPRLAND REQUIRED IMPORTED_TARGET hyprland)
 
 # ---------------------------------------------------------------------------
 # wayland protocols
 # ---------------------------------------------------------------------------
 find_package(PlasmaWaylandProtocols CONFIG REQUIRED)
-find_package(PkgConfig REQUIRED)
 pkg_check_modules(WAYLAND_SERVER REQUIRED
     IMPORTED_TARGET wayland-server
 )
@@ -52,7 +51,7 @@ find_program(WAYLAND_SCANNER
     REQUIRED
 )
 # Select the protocol XML to implement.
-set(PLASMA_PROTOCOL plasma-window-management plasma-shell plasma-virtual-desktop)
+set(PLASMA_PROTOCOLS plasma-window-management plasma-shell plasma-virtual-desktop)
 
 
 set(PLASMA_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
@@ -110,7 +109,7 @@ target_compile_options(${PROJECT_NAME} PRIVATE
 
 # Headers and helper libraries (hyprlang, hyprutils, wayland-server, xkbcommon, …)
 target_link_libraries(${PROJECT_NAME} PRIVATE
-    PkgConfig::HYPRAND
+  PkgConfig::HYPRLAND
 )
 
 # Export the plugin entry-point symbols so Hyprland can dlsym() them.
