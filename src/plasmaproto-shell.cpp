@@ -22,6 +22,7 @@ struct PlasmaSurfaceState {
   bool roleSet = false;
   uint32_t role = 0;
   int32_t x = 0;
+  bool set_position_pending = false;
   int32_t y = 0;
   SP<CWLSurfaceResource> hyprSurface;
   struct {
@@ -57,8 +58,15 @@ static void bindPlasmaShell(wl_client *client, void *data, uint32_t version,
 }
 
 static bool applyPosition(PlasmaSurfaceState *state) {
-  if (!state || !state->hyprSurface)
+  if (!state) {
     return false;
+  }
+
+  state->set_position_pending = true;
+
+  if (!state->hyprSurface) {
+    return false;
+  }
 
   // Resolve Hyprland's higher-level surface wrapper.
   auto hlSurface = Desktop::View::CWLSurface::fromResource(state->hyprSurface);
@@ -83,6 +91,7 @@ static bool applyPosition(PlasmaSurfaceState *state) {
   movable->move(
       Vector2D{static_cast<double>(state->x), static_cast<double>(state->y)});
 
+  state->set_position_pending = true;
   return true;
 }
 
@@ -258,6 +267,8 @@ static void handleGetSurface(wl_client *client, wl_resource *shellResource,
   state->listeners.commit = state->hyprSurface->m_events.commit.listen([state] {
     const auto &current = state->hyprSurface->m_current;
 
+    // try move to correct position
+    applyPosition(state);
     // resize the window
     auto hlSurface =
         Desktop::View::CWLSurface::fromResource(state->hyprSurface);
