@@ -4,7 +4,11 @@
 #include <desktop/DesktopTypes.hpp>
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/desktop/view/WLSurface.hpp>
+#include <hyprland/src/desktop/view/Window.hpp>
 #include <hyprland/src/desktop/view/types/GeometricMovable.hpp>
+#include <hyprland/src/event/EventBus.hpp>
+#include <hyprland/src/layout/LayoutManager.hpp>
+#include <hyprland/src/protocols/XDGShell.hpp>
 #include <hyprland/src/protocols/core/Compositor.hpp>
 #include <hyprland/src/protocols/core/Output.hpp>
 #include <new>
@@ -25,6 +29,7 @@ struct PlasmaSurfaceState {
   uint32_t role = 0;
   int32_t x = 0;
   bool set_position_pending = false;
+  bool positionSet = false;
   int32_t y = 0;
   SP<CWLSurfaceResource> hyprSurface;
   PHLMONITORREF monitor;
@@ -43,6 +48,7 @@ static const struct org_kde_plasma_shell_interface s_shellImpl = {
 static std::unordered_map<wl_resource *, PlasmaSurfaceState *> g_surfaces;
 
 static struct wl_global *g_plasmaShell = nullptr;
+static CHyprSignalListener g_windowOpenListener;
 
 static void bindPlasmaShell(wl_client *client, void *data, uint32_t version,
                             uint32_t id) {
@@ -64,12 +70,12 @@ static bool applyPosition(PlasmaSurfaceState *state) {
   if (!state) {
     return false;
   }
-
-  state->set_position_pending = true;
-
   if (!state->hyprSurface) {
     return false;
   }
+  // if (!state->set_position_pending) {
+  // return false;
+  //}
 
   // Resolve Hyprland's higher-level surface wrapper.
   auto hlSurface = Desktop::View::CWLSurface::fromResource(state->hyprSurface);
@@ -96,6 +102,38 @@ static bool applyPosition(PlasmaSurfaceState *state) {
 
   state->set_position_pending = false;
   return true;
+}
+
+static void openWindowListener(PHLWINDOW window) {
+  if (!window || !window->wlSurface())
+    return;
+
+  auto windowSurface = window->wlSurface()->resource();
+
+  if (!windowSurface)
+    return;
+
+  for (const auto &[_, state] : g_surfaces) {
+    if (!state || !state->hyprSurface ||
+        state->hyprSurface.get() != windowSurface.get())
+      continue;
+
+    // The normal layout placement may have overwritten our earlier move.
+    if (state->positionSet) {
+      state->set_position_pending = true;
+
+      if (!applyPosition(state)) {
+        hyprplasma::log(Log::WARN,
+                        "Could not apply initial position to Plasma surface");
+        window->m_isFloating = true;
+      } else {
+        hyprplasma::log(Log::DEBUG, "Applied initial Plasma position {}, {}",
+                        state->x, state->y);
+      }
+    }
+
+    break;
+  }
 }
 
 static void onPlasmaSurfaceDestroyed(wl_resource *resource) {
@@ -180,6 +218,8 @@ static void surfaceSetPosition(wl_client *, wl_resource *resource, int32_t x,
   state->x = x;
   state->y = y;
 
+  state->set_position_pending = true;
+  state->positionSet = true;
   applyPosition(state);
 }
 
@@ -203,6 +243,7 @@ static void surfaceSetRole(wl_client *, wl_resource *resource, uint32_t role) {
     state->roleSet = true;
     break;
   default:
+    hyprplasma::log(Log::ERR, "surfaceSetRole: invalid role {}", role);
     return;
   }
   hyprplasma::log(Log::INFO, "found role {}", role);
@@ -281,6 +322,7 @@ static void handleGetSurface(wl_client *client, wl_resource *shellResource,
   if (!hyprSurface) {
     wl_resource_post_error(shellResource, 0,
                            "Could not resolve Hyprland wl_surface");
+    hyprplasma::log(Log::ERR, "Could not resolve Hyprland wl_surface");
     return;
   }
 
@@ -299,13 +341,8 @@ static void handleGetSurface(wl_client *client, wl_resource *shellResource,
   state->listeners.commit = state->hyprSurface->m_events.commit.listen([state] {
     const auto &current = state->hyprSurface->m_current;
 
-    // try move to correct position, if needed
-    // BUG: adding the guard stops initial position working properly , don't
-    // know why
-    // if (state->set_position_pending) {
     applyPosition(state);
-    // }
-    // resize the window
+
     auto hlSurface =
         Desktop::View::CWLSurface::fromResource(state->hyprSurface);
     if (hlSurface) {
@@ -315,6 +352,24 @@ static void handleGetSurface(wl_client *client, wl_resource *shellResource,
             dynamicPointerCast<Desktop::View::IGeometricMovable>(view);
         if (movable) {
           movable->resize(current.size);
+        }
+        auto window = Desktop::View::CWindow::fromView(view);
+
+        if (window && !window->m_isX11) {
+          window->m_isFloating = true;
+          auto xdg = window->m_xdgSurface.lock();
+          auto toplevel = xdg ? xdg->m_toplevel.lock() : nullptr;
+
+          if (xdg && toplevel) {
+            const auto geometry = xdg->m_current.geometry;
+            const auto &limits = toplevel->m_current;
+            hyprplasma::log(
+                Log::INFO,
+                "Plasma geometry: buffer={}, origin={}, geometry={}, "
+                "min={}, max={}, floating={}",
+                current.size, geometry.pos(), geometry.size(), limits.minSize,
+                limits.maxSize, window->m_isFloating);
+          }
         }
       }
     }
@@ -337,8 +392,15 @@ void plasma_shell_init(void) {
                                  "org.kde.plasma.shell failed to register",
                                  CHyprColor(0.0F, 1.0F, 0.0F, 1.0F), 3000.0F);
   }
+
+  g_windowOpenListener =
+      Event::bus()->m_events.window.open.listen(openWindowListener);
 }
 void plasma_shell_exit(void) {
+  if (g_windowOpenListener) {
+    g_windowOpenListener.reset();
+  }
+
   if (g_plasmaShell) {
     wl_global_destroy(g_plasmaShell);
     g_plasmaShell = nullptr;
