@@ -11,6 +11,7 @@
 #include <hyprland/src/protocols/XDGShell.hpp>
 #include <hyprland/src/protocols/core/Compositor.hpp>
 #include <hyprland/src/protocols/core/Output.hpp>
+#include <hyprutils/math/Vector2D.hpp>
 #include <new>
 #include <unordered_map>
 #include <wayland-server-core.h>
@@ -90,6 +91,13 @@ static bool applyPosition(PlasmaSurfaceState *state) {
     return false;
   }
 
+  auto window = Desktop::View::CWindow::fromView(view);
+  if (!window) {
+    return false;
+  }
+  window->positionAnimation()->setValueAndWarp(Vector2D{state->x, state->y});
+
+  /*
   // Not every view supports arbitrary movement.
   auto movable = dynamicPointerCast<Desktop::View::IGeometricMovable>(view);
   if (!movable) {
@@ -99,7 +107,7 @@ static bool applyPosition(PlasmaSurfaceState *state) {
 
   movable->move(
       Vector2D{static_cast<double>(state->x), static_cast<double>(state->y)});
-
+*/
   state->set_position_pending = false;
   return true;
 }
@@ -130,6 +138,16 @@ static void openWindowListener(PHLWINDOW window) {
         hyprplasma::log(Log::DEBUG, "Applied initial Plasma position {}, {}",
                         state->x, state->y);
       }
+    }
+
+    // remove window decorations
+    if (state->role == ORG_KDE_PLASMA_SURFACE_ROLE_PANEL ||
+        state->role == ORG_KDE_PLASMA_SURFACE_ROLE_DESKTOP ||
+        state->role == ORG_KDE_PLASMA_SURFACE_ROLE_TOOLTIP) {
+
+      window->m_ruleApplicator->decorateOverride(
+          Desktop::Types::COverridableVar(false,
+                                          Desktop::Types::PRIORITY_SET_PROP));
     }
 
     break;
@@ -221,6 +239,20 @@ static void surfaceSetPosition(wl_client *, wl_resource *resource, int32_t x,
   state->set_position_pending = true;
   state->positionSet = true;
   applyPosition(state);
+
+  auto hlSurface = Desktop::View::CWLSurface::fromResource(state->hyprSurface);
+  if (hlSurface) {
+    auto view = hlSurface->view();
+    if (view) {
+      auto window = Desktop::View::CWindow::fromView(view);
+      if (window) {
+        // hide tooltips without positions
+        if (state->role == ORG_KDE_PLASMA_SURFACE_ROLE_TOOLTIP) {
+          window->setHidden(false);
+        }
+      }
+    }
+  }
 }
 
 static void surfaceSetRole(wl_client *, wl_resource *resource, uint32_t role) {
@@ -353,23 +385,28 @@ static void handleGetSurface(wl_client *client, wl_resource *shellResource,
         if (movable) {
           movable->resize(current.size);
         }
+
         auto window = Desktop::View::CWindow::fromView(view);
-
         if (window && !window->m_isX11) {
-          window->m_isFloating = true;
-          auto xdg = window->m_xdgSurface.lock();
-          auto toplevel = xdg ? xdg->m_toplevel.lock() : nullptr;
-
-          if (xdg && toplevel) {
-            const auto geometry = xdg->m_current.geometry;
-            const auto &limits = toplevel->m_current;
-            hyprplasma::log(
-                Log::INFO,
-                "Plasma geometry: buffer={}, origin={}, geometry={}, "
-                "min={}, max={}, floating={}",
-                current.size, geometry.pos(), geometry.size(), limits.minSize,
-                limits.maxSize, window->m_isFloating);
+          // hide tooltips without positions
+          if (state->role == ORG_KDE_PLASMA_SURFACE_ROLE_TOOLTIP) {
+            if (!state->positionSet) {
+              window->setHidden(true);
+            }
           }
+        }
+        window->m_isFloating = true;
+        auto xdg = window->m_xdgSurface.lock();
+        auto toplevel = xdg ? xdg->m_toplevel.lock() : nullptr;
+
+        if (xdg && toplevel) {
+          const auto geometry = xdg->m_current.geometry;
+          const auto &limits = toplevel->m_current;
+          hyprplasma::log(Log::INFO,
+                          "Plasma geometry: buffer={}, origin={}, geometry={}, "
+                          "min={}, max={}, floating={}",
+                          current.size, geometry.pos(), geometry.size(),
+                          limits.minSize, limits.maxSize, window->m_isFloating);
         }
       }
     }
