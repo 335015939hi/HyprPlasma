@@ -44,20 +44,15 @@ static wl_global *g_plasmaVirtualDesktopManagement = nullptr;
 static uint64_t g_nextDesktopId = 0;
 static std::vector<CWorkspace *> g_workspaceOrder;
 static bool g_suppressWorkspaceCreated = false;
-
 static std::unordered_map<CWorkspace *, std::unique_ptr<WorkspaceWatch>>
     g_workspaces;
-
 static std::unordered_set<wl_resource *> g_managers;
-
 static std::unordered_map<wl_resource *, VirtualDesktopState *> g_desktops;
-
 static CHyprSignalListener g_workspaceCreatedListener;
 
 // Forward declarations
 static void bindPlasmaVirtualDesktop(wl_client *client, void *data,
                                      uint32_t version, uint32_t id);
-
 static void onWorkspaceDestroyed(CWorkspace *workspace);
 static void registerWorkspace(PHLWORKSPACE workspace, bool announce);
 static void updateDesktopPosition(VirtualDesktopState *state);
@@ -76,7 +71,6 @@ static WorkspaceWatch *findWorkspace(const std::string &id) {
     if (watch->id == id)
       return watch.get();
   }
-
   return nullptr;
 }
 
@@ -86,29 +80,23 @@ static std::vector<WorkspaceWatch *> orderedWorkspaces() {
 
   for (auto *workspace : g_workspaceOrder) {
     auto it = g_workspaces.find(workspace);
-
     if (it == g_workspaces.end())
       continue;
 
     auto ws = it->second->workspace.lock();
-
     if (!ws || ws->m_isSpecialWorkspace)
       continue;
 
     result.push_back(it->second.get());
   }
-
   return result;
 }
 
 static uint32_t workspacePosition(const WorkspaceWatch *watch) {
   const auto ordered = orderedWorkspaces();
-
   const auto it = std::find(ordered.begin(), ordered.end(), watch);
-
   if (it == ordered.end())
     return 0;
-
   return static_cast<uint32_t>(std::distance(ordered.begin(), it));
 }
 
@@ -122,11 +110,9 @@ static void sendManagerDone(wl_resource *resource) {
 
 static void notifyWorkspaceCreated(WorkspaceWatch *watch) {
   const auto position = workspacePosition(watch);
-
   for (auto *manager : g_managers) {
     org_kde_plasma_virtual_desktop_management_send_desktop_created(
         manager, watch->id.c_str(), position);
-
     sendManagerDone(manager);
   }
 }
@@ -135,13 +121,11 @@ static void notifyWorkspaceRemoved(const std::string &id) {
   for (auto *manager : g_managers) {
     org_kde_plasma_virtual_desktop_management_send_desktop_removed(manager,
                                                                    id.c_str());
-
     sendManagerDone(manager);
   }
 
   // Destroy child resources associated with this desktop.
   std::vector<wl_resource *> toDestroy;
-
   for (const auto &[resource, state] : g_desktops) {
     if (state && state->id == id) {
       org_kde_plasma_virtual_desktop_send_removed(resource);
@@ -154,13 +138,13 @@ static void notifyWorkspaceRemoved(const std::string &id) {
 }
 
 static void updateAllDesktopPositions() {
-  for (auto &[_, state] : g_desktops)
+  for (auto &[_, state] : g_desktops) {
     updateDesktopPosition(state);
+  }
 }
 
 static void forgetWorkspace(CWorkspace *workspace) {
   auto it = g_workspaces.find(workspace);
-
   if (it == g_workspaces.end())
     return;
 
@@ -187,7 +171,6 @@ static void onWorkspaceDestroyed(CWorkspace *workspace) {
 static void registerWorkspace(PHLWORKSPACE workspace, bool announce) {
   if (!workspace || workspace->m_isSpecialWorkspace)
     return;
-
   if (g_workspaces.contains(workspace.get()))
     return;
 
@@ -219,17 +202,14 @@ static void registerWorkspace(PHLWORKSPACE workspace, bool announce) {
 static void sendDesktopPosition(VirtualDesktopState *state) {
   if (!state || !state->resource)
     return;
-
   if (wl_resource_get_version(state->resource) < 3)
     return;
 
   auto *watch = findWorkspace(state->id);
-
   if (!watch)
     return;
 
   const auto position = workspacePosition(watch);
-
   if (position == state->lastPosition)
     return;
 
@@ -241,9 +221,7 @@ static void sendDesktopPosition(VirtualDesktopState *state) {
 static void updateDesktopPosition(VirtualDesktopState *state) {
   if (!state)
     return;
-
   sendDesktopPosition(state);
-
   if (state->resource)
     org_kde_plasma_virtual_desktop_send_done(state->resource);
 }
@@ -251,26 +229,19 @@ static void updateDesktopPosition(VirtualDesktopState *state) {
 static void sendDesktopState(VirtualDesktopState *state) {
   if (!state || !state->resource)
     return;
-
   auto workspace = state->workspace.lock();
-
   if (!workspace)
     return;
 
   org_kde_plasma_virtual_desktop_send_desktop_id(state->resource,
                                                  state->id.c_str());
-
   org_kde_plasma_virtual_desktop_send_name(state->resource,
                                            workspace->m_name.c_str());
-
   sendDesktopPosition(state);
-
   if (workspace->m_visible) {
     org_kde_plasma_virtual_desktop_send_activated(state->resource);
-
     if (wl_resource_get_version(state->resource) >= 4) {
       auto monitor = workspace->m_monitor.lock();
-
       if (monitor) {
         org_kde_plasma_virtual_desktop_send_output_entered(
             state->resource, monitor->m_name.c_str());
@@ -279,7 +250,6 @@ static void sendDesktopState(VirtualDesktopState *state) {
   } else {
     org_kde_plasma_virtual_desktop_send_deactivated(state->resource);
   }
-
   org_kde_plasma_virtual_desktop_send_done(state->resource);
 }
 
@@ -290,20 +260,14 @@ static void sendDesktopState(VirtualDesktopState *state) {
 static void desktopRequestActivate(wl_client *, wl_resource *resource) {
   auto *state =
       static_cast<VirtualDesktopState *>(wl_resource_get_user_data(resource));
-
   if (!state)
     return;
-
   auto workspace = state->workspace.lock();
-
   if (!workspace)
     return;
-
   auto monitor = workspace->m_monitor.lock();
-
   if (!monitor)
     return;
-
   monitor->changeWorkspace(workspace);
 }
 
@@ -311,20 +275,16 @@ static void desktopRequestEnterOutput(wl_client *, wl_resource *resource,
                                       const char *outputName) {
   auto *state =
       static_cast<VirtualDesktopState *>(wl_resource_get_user_data(resource));
-
   if (!state || !outputName)
     return;
 
   auto workspace = state->workspace.lock();
-
   if (!workspace)
     return;
 
   auto monitor = workspace->m_monitor.lock();
-
   if (!monitor)
     return;
-
   // This implementation currently supports activation on the
   // workspace's assigned monitor, not transferring workspaces.
   if (monitor->m_name != outputName) {
@@ -333,7 +293,6 @@ static void desktopRequestEnterOutput(wl_client *, wl_resource *resource,
                     state->id, outputName);
     return;
   }
-
   monitor->changeWorkspace(workspace);
 }
 
@@ -350,28 +309,22 @@ static const struct org_kde_plasma_virtual_desktop_interface
 static void onVirtualDesktopDestroyed(wl_resource *resource) {
   auto *state =
       static_cast<VirtualDesktopState *>(wl_resource_get_user_data(resource));
-
   if (!state)
     return;
-
   g_desktops.erase(resource);
-
   state->listeners.active.reset();
   state->listeners.renamed.reset();
   state->listeners.monitorChanged.reset();
-
   delete state;
 }
 
 static void attachDesktopListeners(VirtualDesktopState *state) {
   auto workspace = state->workspace.lock();
-
   if (!workspace)
     return;
 
   state->listeners.active = workspace->m_events.activeChanged.listen([state] {
     auto workspace = state->workspace.lock();
-
     if (!workspace || !state->resource)
       return;
 
@@ -380,7 +333,6 @@ static void attachDesktopListeners(VirtualDesktopState *state) {
 
       if (wl_resource_get_version(state->resource) >= 4) {
         auto monitor = workspace->m_monitor.lock();
-
         if (monitor) {
           org_kde_plasma_virtual_desktop_send_output_entered(
               state->resource, monitor->m_name.c_str());
@@ -395,7 +347,6 @@ static void attachDesktopListeners(VirtualDesktopState *state) {
 
   state->listeners.renamed = workspace->m_events.renamed.listen([state] {
     auto workspace = state->workspace.lock();
-
     if (!workspace || !state->resource)
       return;
 
@@ -408,19 +359,16 @@ static void attachDesktopListeners(VirtualDesktopState *state) {
   state->listeners.monitorChanged =
       workspace->m_events.monitorChanged.listen([state] {
         auto workspace = state->workspace.lock();
-
         if (!workspace || !state->resource || !workspace->m_visible ||
             wl_resource_get_version(state->resource) < 4)
           return;
 
         auto monitor = workspace->m_monitor.lock();
-
         if (!monitor)
           return;
 
         org_kde_plasma_virtual_desktop_send_output_entered(
             state->resource, monitor->m_name.c_str());
-
         org_kde_plasma_virtual_desktop_send_done(state->resource);
       });
 }
@@ -435,7 +383,6 @@ static void managerGetVirtualDesktop(wl_client *client, wl_resource *resource,
     return;
 
   auto *watch = findWorkspace(desktopId);
-
   if (!watch || !watch->workspace.lock()) {
     wl_resource_post_error(resource, 0, "Unknown virtual desktop: %s",
                            desktopId);
@@ -449,14 +396,12 @@ static void managerGetVirtualDesktop(wl_client *client, wl_resource *resource,
   auto *child =
       wl_resource_create(client, &org_kde_plasma_virtual_desktop_interface,
                          static_cast<int>(version), id);
-
   if (!child) {
     wl_client_post_no_memory(client);
     return;
   }
 
   auto *state = new (std::nothrow) VirtualDesktopState{};
-
   if (!state) {
     wl_resource_destroy(child);
     wl_client_post_no_memory(client);
@@ -485,7 +430,6 @@ static void managerRequestCreateVirtualDesktop(wl_client *, wl_resource *,
   // Fall back to the first available monitor.
   if (!monitor) {
     const auto monitors = State::monitorState()->monitors();
-
     if (!monitors.empty())
       monitor = monitors.front();
   }
@@ -554,7 +498,6 @@ static void managerRequestRemoveVirtualDesktop(wl_client *, wl_resource *,
     return;
 
   auto *watch = findWorkspace(desktopId);
-
   if (!watch) {
     hyprplasma::log(Log::WARN,
                     "Unknown Plasma desktop requested for removal: {}",
@@ -563,7 +506,6 @@ static void managerRequestRemoveVirtualDesktop(wl_client *, wl_resource *,
   }
 
   auto workspace = watch->workspace.lock();
-
   if (!workspace || workspace->m_isSpecialWorkspace)
     return;
 
@@ -576,7 +518,6 @@ static void managerRequestRemoveVirtualDesktop(wl_client *, wl_resource *,
   }
 
   auto monitor = workspace->m_monitor.lock();
-
   if (!monitor) {
     hyprplasma::log(Log::WARN,
                     "Cannot remove desktop {}: its monitor is unavailable",
@@ -585,7 +526,6 @@ static void managerRequestRemoveVirtualDesktop(wl_client *, wl_resource *,
   }
 
   const auto it = std::find(desktops.begin(), desktops.end(), watch);
-
   if (it == desktops.end())
     return;
 
