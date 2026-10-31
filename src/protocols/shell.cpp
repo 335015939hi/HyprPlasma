@@ -34,8 +34,8 @@ struct PlasmaSurfaceState {
   int32_t y = 0;
   bool set_position_pending = false;
   bool positionSet = false;
-  uint32_t last_height = 0;
-  uint32_t last_width = 0;
+  bool no_initial_focus = false;
+  bool no_decorations = false;
   SP<CWLSurfaceResource> hyprSurface;
   PHLMONITORREF monitor;
   struct {
@@ -143,13 +143,14 @@ static void openWindowListener(PHLWINDOW window) {
     }
 
     // remove window decorations
-    if (state->role == ORG_KDE_PLASMA_SURFACE_ROLE_PANEL ||
-        state->role == ORG_KDE_PLASMA_SURFACE_ROLE_DESKTOP ||
-        state->role == ORG_KDE_PLASMA_SURFACE_ROLE_TOOLTIP) {
-
+    if (state->no_decorations) {
       window->m_ruleApplicator->decorateOverride(
           Desktop::Types::COverridableVar(false,
                                           Desktop::Types::PRIORITY_SET_PROP));
+    }
+    // set no initial focus
+    if (state->no_initial_focus) {
+      window->m_noInitialFocus = true;
     }
 
     break;
@@ -255,14 +256,18 @@ static void surfaceSetRole(wl_client *, wl_resource *resource, uint32_t role) {
   case ORG_KDE_PLASMA_SURFACE_ROLE_NORMAL:
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_DESKTOP:
+    state->no_decorations = true;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_PANEL:
+    state->no_decorations = true;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_ONSCREENDISPLAY:
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_NOTIFICATION:
+    state->no_initial_focus = true;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_TOOLTIP:
+    state->no_decorations = true;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_CRITICALNOTIFICATION:
     break;
