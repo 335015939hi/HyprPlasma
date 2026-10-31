@@ -62,7 +62,6 @@ static void bindPlasmaShell(wl_client *client, void *data, uint32_t version,
 
   auto *resource = wl_resource_create(client, &org_kde_plasma_shell_interface,
                                       static_cast<int>(supportedVersion), id);
-
   if (!resource) {
     wl_client_post_no_memory(client);
     return;
@@ -98,7 +97,7 @@ static bool updateGeometry(PlasmaSurfaceState *state) {
 
   // Preserve the existing position unless Plasma supplied one.
   auto pos = box.pos();
-  if (state->positionSet)
+  if (state->set_position_pending)
     pos = Vector2D{double(state->x), double(state->y)};
 
   CBox newBox{pos, size};
@@ -209,7 +208,6 @@ static void surfaceSetOutput(wl_client *, wl_resource *resource,
   }
 
   auto monitor = outputResource->m_monitor.lock();
-
   if (!monitor) {
     hyprplasma::log(Log::WARN, "set_output: monitor is unavailable");
     return;
@@ -238,20 +236,6 @@ static void surfaceSetPosition(wl_client *, wl_resource *resource, int32_t x,
   state->set_position_pending = true;
   state->positionSet = true;
   updateGeometry(state);
-
-  auto hlSurface = Desktop::View::CWLSurface::fromResource(state->hyprSurface);
-  if (hlSurface) {
-    auto view = hlSurface->view();
-    if (view) {
-      auto window = Desktop::View::CWindow::fromView(view);
-      if (window) {
-        // hide tooltips without positions
-        if (state->role == ORG_KDE_PLASMA_SURFACE_ROLE_TOOLTIP) {
-          window->setHidden(false);
-        }
-      }
-    }
-  }
 }
 
 static void surfaceSetRole(wl_client *, wl_resource *resource, uint32_t role) {
@@ -263,20 +247,27 @@ static void surfaceSetRole(wl_client *, wl_resource *resource, uint32_t role) {
   }
   switch (role) {
   case ORG_KDE_PLASMA_SURFACE_ROLE_NORMAL:
+    break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_DESKTOP:
+    break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_PANEL:
+    break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_ONSCREENDISPLAY:
+    break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_NOTIFICATION:
+    break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_TOOLTIP:
+    break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_CRITICALNOTIFICATION:
+    break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_APPLETPOPUP:
-    state->role = role;
-    state->roleSet = true;
     break;
   default:
     hyprplasma::log(Log::ERR, "surfaceSetRole: invalid role {}", role);
     return;
   }
+  state->role = role;
+  state->roleSet = true;
   hyprplasma::log(Log::INFO, "found role {}", role);
 }
 
@@ -379,30 +370,7 @@ static void handleGetSurface(wl_client *client, wl_resource *shellResource,
     if (hlSurface) {
       auto view = hlSurface->view();
       if (view) {
-
         auto window = Desktop::View::CWindow::fromView(view);
-        if (window && !window->m_isX11) {
-          updateGeometry(state);
-          // resize the window, if window size changed
-          /*if (state->last_width != static_cast<uint32_t>(current.size.x) ||
-              state->last_height != static_cast<uint32_t>(current.size.y)) {
-            state->last_width = static_cast<uint32_t>(current.size.x);
-            state->last_height = static_cast<uint32_t>(current.size.y);
-            // Invalidate the old window bounds.
-            g_pHyprRenderer->damageWindow(window);
-            // Resize immediately, without a size animation.
-            window->sizeAnimation()->setValueAndWarp(current.size);
-            // Invalidate the new window bounds.
-            g_pHyprRenderer->damageWindow(window);
-          }*/
-
-          // hide tooltips without positions
-          if (state->role == ORG_KDE_PLASMA_SURFACE_ROLE_TOOLTIP) {
-            if (!state->positionSet) {
-              window->setHidden(true);
-            }
-          }
-        }
         window->m_isFloating = true;
         auto xdg = window->m_xdgSurface.lock();
         auto toplevel = xdg ? xdg->m_toplevel.lock() : nullptr;
@@ -432,14 +400,15 @@ void plasma_shell_init(void) {
   g_plasmaShell = wl_global_create(g_pCompositor->m_wlDisplay,
                                    &org_kde_plasma_shell_interface, 8, nullptr,
                                    bindPlasmaShell);
-  if (g_plasmaShell == nullptr) {
+  g_windowOpenListener =
+      Event::bus()->m_events.window.open.listen(openWindowListener);
+
+  if (g_plasmaShell == nullptr || g_windowOpenListener == nullptr) {
     HyprlandAPI::addNotification(g_pluginHandle,
                                  "org.kde.plasma.shell failed to register",
                                  CHyprColor(0.0F, 1.0F, 0.0F, 1.0F), 3000.0F);
+    plasma_shell_exit();
   }
-
-  g_windowOpenListener =
-      Event::bus()->m_events.window.open.listen(openWindowListener);
 }
 void plasma_shell_exit(void) {
   if (g_windowOpenListener) {
