@@ -134,6 +134,7 @@ static void openWindowListener(PHLWINDOW window) {
       if (!updateGeometry(state)) {
         hyprplasma::log(Log::WARN,
                         "Could not apply initial position to Plasma surface");
+        // set floating directly. going through the layout manager breaks things
         window->m_isFloating = true;
       } else {
         hyprplasma::log(Log::DEBUG, "Applied initial Plasma position {}, {}",
@@ -245,6 +246,8 @@ static void surfaceSetRole(wl_client *, wl_resource *resource, uint32_t role) {
   hyprplasma::log(Log::INFO, "surfaceSetRole {}", role);
   auto *state =
       static_cast<PlasmaSurfaceState *>(wl_resource_get_user_data(resource));
+  if (!state)
+    return;
   if (state->roleSet) {
     return;
   }
@@ -374,18 +377,23 @@ static void handleGetSurface(wl_client *client, wl_resource *shellResource,
       auto view = hlSurface->view();
       if (view) {
         auto window = Desktop::View::CWindow::fromView(view);
-        window->m_isFloating = true;
-        auto xdg = window->m_xdgSurface.lock();
-        auto toplevel = xdg ? xdg->m_toplevel.lock() : nullptr;
+        if (window) {
+          // set floating directly. going through the layout manager breaks
+          // things
+          window->m_isFloating = true;
+          auto xdg = window->m_xdgSurface.lock();
+          auto toplevel = xdg ? xdg->m_toplevel.lock() : nullptr;
 
-        if (xdg && toplevel) {
-          const auto geometry = xdg->m_current.geometry;
-          const auto &limits = toplevel->m_current;
-          hyprplasma::log(Log::INFO,
-                          "Plasma geometry: buffer={}, origin={}, geometry={}, "
-                          "min={}, max={}, floating={}",
-                          current.size, geometry.pos(), geometry.size(),
-                          limits.minSize, limits.maxSize, window->m_isFloating);
+          if (xdg && toplevel) {
+            const auto geometry = xdg->m_current.geometry;
+            const auto &limits = toplevel->m_current;
+            hyprplasma::log(
+                Log::INFO,
+                "Plasma geometry: buffer={}, origin={}, geometry={}, "
+                "min={}, max={}, floating={}",
+                current.size, geometry.pos(), geometry.size(), limits.minSize,
+                limits.maxSize, window->m_isFloating);
+          }
         }
       }
     }
