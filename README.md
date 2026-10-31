@@ -1,0 +1,104 @@
+# HyprPlasma
+
+A Hyprland plugin aiming to bring KDE Plasma-style behavior and protocol compatibility to Hyprland.
+
+HyprPlasma exposes selected Wayland interfaces commonly used by KDE Plasma clients and translates them into Hyprland's native window and workspace model. The goal is to make Plasma-compatible applications, panels, and desktop management tools behave more naturally in a Hyprland session.
+
+## Features
+
+- Provides the `org_kde_plasma_shell` protocol interface
+- Handles Plasma surface roles such as panels, desktops, popups, and notifications
+- Applies requested Plasma window geometry and positioning
+- Implements `org_kde_plasma_virtual_desktop_management` and `org_kde_plasma_virtual_desktop`
+- Creates and manages virtual desktops in a Plasma-like way
+- Reacts to Hyprland workspace and monitor events in real time
+- Built as a native Hyprland plugin using CMake
+
+## What this project is for
+
+This project is intended for users who want a more KDE Plasma-like desktop experience while staying in Hyprland. It is especially focused on compatibility with Plasma clients and protocol expectations rather than re-implementing the full KDE desktop environment.
+
+## Requirements
+
+Before building, make sure you have:
+
+- Hyprland installed with development headers and pkg-config metadata
+- CMake 3.20 or newer
+- A C++23-capable compiler
+- `wayland-server` development packages
+- The Plasma Wayland protocols package (`PlasmaWaylandProtocols`)
+- The `wayland-scanner` tool available in `PATH`
+
+Important: Hyprland plugins are ABI-sensitive. Build this plugin against the same Hyprland version and compiler stack used by your running Hyprland session.
+
+## Build
+
+```bash
+cmake -B build -S .
+cmake --build build
+```
+
+A debug build can be configured with:
+
+```bash
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug
+```
+
+## Install / load
+
+The project installs its shared library to Hyprland's plugin directory by default:
+
+```bash
+cmake --install build
+```
+
+Then load it while Hyprland is running:
+
+```bash
+hyprctl plugin load /absolute/path/to/build/libhyprplasma.so
+```
+
+To unload it:
+
+```bash
+hyprctl plugin unload hyprplasma
+```
+
+## Project structure
+
+```text
+.
+├── CMakeLists.txt
+├── src/
+│   ├── main.cpp
+│   ├── hyprplasma.hpp
+│   ├── hyprplasma.cpp
+│   └── protocols/
+│       ├── shell.cpp
+│       ├── shell.hpp
+│       ├── virtualdesktop.cpp
+│       └── virtualdesktop.hpp
+└── build/
+```
+
+### Main components
+
+- `src/main.cpp`: plugin entry points and API version export
+- `src/hyprplasma.hpp`: shared plugin logging and API declarations
+- `src/protocols/shell.cpp`: Plasma shell protocol implementation
+- `src/protocols/virtualdesktop.cpp`: virtual desktop management implementation
+- `CMakeLists.txt`: build configuration, dependency setup, and generated Wayland protocol code
+
+## Notes
+
+This repository is a plugin implementation and is not a complete KDE Plasma desktop environment. Instead, it focuses on reproducing the protocol behaviors that Plasma clients expect when they interact with Hyprland.
+
+## License
+
+No explicit license file is currently present in the repository, so licensing terms are not specified here.
+
+## References
+
+- Hyprland plugin development docs: https://wiki.hypr.land/hyprland-plugins/development/getting-started
+- Hyprland plugin API headers in the local Hyprland installation
+- Plasma Wayland protocol definitions provided by the Plasma Wayland protocols package
