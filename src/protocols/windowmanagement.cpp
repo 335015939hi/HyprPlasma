@@ -1,16 +1,21 @@
 
 #include <Compositor.hpp>
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <desktop/Workspace.hpp>
 #include <desktop/state/FocusState.hpp>
 #include <desktop/state/WindowState.hpp>
 #include <desktop/view/Window.hpp>
 #include <event/EventBus.hpp>
+#include <filesystem>
+#include <fstream>
 #include <layout/space/Space.hpp>
 #include <layout/target/Target.hpp>
 #include <memory>
+#include <optional>
 #include <output/Monitor.hpp>
 #include <string>
 #include <sys/types.h>
@@ -92,6 +97,9 @@ struct WindowWatch {
     CHyprSignalListener resize;
     CHyprSignalListener monitorChanged;
   } listeners;
+
+  std::string iconName;
+  bool iconValid = false;
 };
 
 struct WindowResourceData {
@@ -113,6 +121,12 @@ static std::unordered_map<wl_resource *, std::unique_ptr<WindowResourceData>>
 static std::unordered_set<wl_resource *> g_managers;
 static std::vector<std::string> g_lastStackingOrder;
 
+static std::unordered_map<std::string, std::optional<std::string>>
+    g_desktopIconCache;
+static bool g_showDesktop = false;
+static PHLWINDOWREF g_showDesktopFocusedWindow;
+static std::vector<PHLWINDOWREF> g_showDesktopHiddenWindows;
+
 static struct {
   CHyprSignalListener open;
   CHyprSignalListener active;
@@ -122,7 +136,11 @@ static struct {
   CHyprSignalListener pin;
   CHyprSignalListener urgent;
   CHyprSignalListener tick;
+  CHyprSignalListener openLate;
 } g_listeners;
+
+// declarations
+static void setShowDesktop(bool enabled);
 
 // -----------------------------------------------------------------------------
 // Lookup helpers
@@ -141,6 +159,209 @@ static WindowWatch *findWindowByUuid(const std::string &uuid) {
 static WindowWatch *findWindowByLegacyId(uint32_t id) {
   auto it = g_windowsByLegacyId.find(id);
   return it == g_windowsByLegacyId.end() ? nullptr : it->second;
+}
+
+namespace fs = std::filesystem;
+
+static std::string trim(std::string value) {
+  const auto first =
+      std::find_if_not(value.begin(), value.end(),
+                       [](unsigned char c) { return std::isspace(c); });
+
+  const auto last =
+      std::find_if_not(value.rbegin(), value.rend(), [](unsigned char c) {
+        return std::isspace(c);
+      }).base();
+
+  if (first >= last)
+    return {};
+
+  return std::string(first, last);
+}
+
+static std::string lower(std::string value) {
+  std::transform(
+      value.begin(), value.end(), value.begin(),
+      [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return value;
+}
+
+// Read a key exclusively from the [Desktop Entry] group.
+static std::optional<std::string> desktopEntryValue(const fs::path &path,
+                                                    const std::string &key) {
+  std::ifstream file(path);
+  if (!file)
+    return std::nullopt;
+
+  bool inDesktopEntry = false;
+  std::string line;
+
+  while (std::getline(file, line)) {
+    line = trim(std::move(line));
+
+    if (line.empty() || line.starts_with('#'))
+      continue;
+
+    if (line.front() == '[') {
+      inDesktopEntry = line == "[Desktop Entry]";
+      continue;
+    }
+
+    if (!inDesktopEntry)
+      continue;
+
+    const auto separator = line.find('=');
+    if (separator == std::string::npos)
+      continue;
+
+    if (trim(line.substr(0, separator)) != key)
+      continue;
+
+    auto value = trim(line.substr(separator + 1));
+    if (value.empty())
+      return std::nullopt;
+
+    return value;
+  }
+
+  return std::nullopt;
+}
+
+static std::vector<fs::path> applicationDirectories() {
+  std::vector<fs::path> result;
+
+  auto add = [&](fs::path path) {
+    if (path.empty())
+      return;
+
+    path /= "applications";
+
+    if (std::find(result.begin(), result.end(), path) == result.end())
+      result.push_back(std::move(path));
+  };
+
+  if (const char *dataHome = std::getenv("XDG_DATA_HOME");
+      dataHome && *dataHome) {
+    add(dataHome);
+  } else if (const char *home = std::getenv("HOME"); home && *home) {
+    add(fs::path(home) / ".local/share");
+  }
+
+  const char *dataDirs = std::getenv("XDG_DATA_DIRS");
+  std::string dirs =
+      dataDirs && *dataDirs ? dataDirs : "/usr/local/share:/usr/share";
+
+  size_t start = 0;
+  while (start <= dirs.size()) {
+    const auto end = dirs.find(':', start);
+    const auto dir = dirs.substr(
+        start, end == std::string::npos ? std::string::npos : end - start);
+
+    if (!dir.empty())
+      add(dir);
+
+    if (end == std::string::npos)
+      break;
+
+    start = end + 1;
+  }
+
+  // Flatpak exports are not necessarily included in XDG_DATA_DIRS.
+  if (const char *home = std::getenv("HOME"); home && *home)
+    add(fs::path(home) / ".local/share/flatpak/exports/share");
+
+  add("/var/lib/flatpak/exports/share");
+
+  return result;
+}
+
+static std::optional<std::string>
+iconNameFromDesktopFile(const fs::path &path) {
+  auto icon = desktopEntryValue(path, "Icon");
+  if (!icon)
+    return std::nullopt;
+
+  // themed_icon_name_changed expects a theme icon name, not an arbitrary
+  // absolute path. QIcon::fromTheme() is used by Plasma's client.
+  if (icon->find('/') != std::string::npos)
+    return std::nullopt;
+
+  // Most desktop files use the extensionless theme name. Normalize the
+  // occasional filename-style Icon= entry.
+  const fs::path iconPath(*icon);
+  if (iconPath.has_extension())
+    *icon = iconPath.stem().string();
+
+  return icon->empty() ? std::nullopt : icon;
+}
+
+static std::optional<std::string>
+desktopIconForAppId(const std::string &appId) {
+  if (appId.empty() || appId.find('/') != std::string::npos ||
+      appId.find('\\') != std::string::npos)
+    return std::nullopt;
+
+  if (const auto it = g_desktopIconCache.find(appId);
+      it != g_desktopIconCache.end())
+    return it->second;
+
+  const auto dirs = applicationDirectories();
+  const auto desktopFile = appId + ".desktop";
+
+  // First try the exact desktop-file ID. This is the common Wayland case.
+  for (const auto &dir : dirs) {
+    std::error_code ec;
+    const auto path = dir / desktopFile;
+
+    if (!fs::is_regular_file(path, ec))
+      continue;
+
+    if (auto icon = iconNameFromDesktopFile(path)) {
+      g_desktopIconCache.emplace(appId, icon);
+      return icon;
+    }
+  }
+
+  // XWayland WM_CLASS values often differ from the desktop-file ID.
+  // Search StartupWMClass as a fallback.
+  const auto wantedClass = lower(appId);
+
+  for (const auto &dir : dirs) {
+    std::error_code ec;
+
+    if (!fs::is_directory(dir, ec))
+      continue;
+
+    fs::recursive_directory_iterator it(
+        dir, fs::directory_options::skip_permission_denied, ec);
+    const fs::recursive_directory_iterator end;
+
+    while (it != end) {
+      if (ec) {
+        ec.clear();
+        it.increment(ec);
+        continue;
+      }
+
+      const auto path = it->path();
+
+      if (it->is_regular_file(ec) && path.extension() == ".desktop") {
+        auto startupClass = desktopEntryValue(path, "StartupWMClass");
+
+        if (startupClass && lower(*startupClass) == wantedClass) {
+          if (auto icon = iconNameFromDesktopFile(path)) {
+            g_desktopIconCache.emplace(appId, icon);
+            return icon;
+          }
+        }
+      }
+
+      it.increment(ec);
+    }
+  }
+
+  g_desktopIconCache.emplace(appId, std::nullopt);
+  return std::nullopt;
 }
 
 // -----------------------------------------------------------------------------
@@ -218,6 +439,32 @@ static void sendTitle(WindowWatch *watch, CWindow *window) {
     org_kde_plasma_window_send_title_changed(resource, watch->title.c_str());
 }
 
+static void sendIconName(WindowWatch *watch, CWindow *window) {
+  if (!watch || !window)
+    return;
+
+  const auto resolved = desktopIconForAppId(window->m_class);
+  const std::string nextIcon = resolved.value_or("");
+
+  if (watch->iconValid && watch->iconName == nextIcon)
+    return;
+
+  const bool hadPreviousIcon = watch->iconValid;
+
+  watch->iconName = nextIcon;
+  watch->iconValid = true;
+
+  // Don't send an unnecessary empty icon on the first lookup.
+  // An empty name is useful when clearing a previously supplied icon.
+  if (nextIcon.empty() && !hadPreviousIcon)
+    return;
+
+  for (auto *resource : watch->resources) {
+    org_kde_plasma_window_send_themed_icon_name_changed(resource,
+                                                        nextIcon.c_str());
+  }
+}
+
 static void sendAppId(WindowWatch *watch, CWindow *window) {
   if (!watch || !window)
     return;
@@ -229,6 +476,8 @@ static void sendAppId(WindowWatch *watch, CWindow *window) {
 
   for (auto *resource : watch->resources)
     org_kde_plasma_window_send_app_id_changed(resource, watch->appId.c_str());
+
+  sendIconName(watch, window);
 }
 
 static void sendState(WindowWatch *watch, CWindow *window) {
@@ -339,6 +588,14 @@ static void sendInitialWindowState(WindowWatch *watch, wl_resource *resource) {
 
   org_kde_plasma_window_send_app_id_changed(resource, window->m_class.c_str());
 
+  const auto iconName = desktopIconForAppId(window->m_class);
+  if (iconName) {
+    org_kde_plasma_window_send_themed_icon_name_changed(resource,
+                                                        iconName->c_str());
+  }
+  watch->iconName = iconName.value_or("");
+  watch->iconValid = true;
+
   org_kde_plasma_window_send_state_changed(resource, state);
 
   if (version >= 6) {
@@ -404,6 +661,9 @@ static void unmapWindow(WindowWatch *watch) {
   watch->geometryValid = false;
   watch->stateValid = false;
   watch->desktopValid = false;
+
+  watch->iconName.clear();
+  watch->iconValid = false;
 
   notifyStackingOrderChanged();
 }
@@ -605,8 +865,12 @@ static void windowRequestSetState(wl_client *, wl_resource *resource,
   if (!window)
     return;
 
-  if ((flags & WindowState::ACTIVE) && (state & WindowState::ACTIVE))
+  if ((flags & WindowState::ACTIVE) && (state & WindowState::ACTIVE)) {
+    if (g_showDesktop)
+      setShowDesktop(false);
+
     window->activate();
+  }
 }
 
 static void windowRequestSetVirtualDesktop(wl_client *, wl_resource *,
@@ -742,12 +1006,90 @@ static void createWindowResource(wl_client *client, wl_resource *manager,
   }
 }
 
+static void hideWindowForShowDesktop(PHLWINDOW window) {
+  if (!g_showDesktop || !window || !window->m_isMapped || window->isHidden())
+    return;
+
+  // Avoid recording the same window twice.
+  for (const auto &weak : g_showDesktopHiddenWindows) {
+    if (weak.lock() == window)
+      return;
+  }
+
+  // setHidden() resets the focused-window reference, but does not perform
+  // the complete focus transition. Do that explicitly first.
+  if (Desktop::focusState()->window() == window) {
+    Desktop::focusState()->fullWindowFocus(
+        nullptr, Desktop::FOCUS_REASON_DESKTOP_STATE_CHANGE);
+  }
+
+  g_showDesktopHiddenWindows.emplace_back(window);
+  window->setHidden(true);
+}
+
+static void notifyShowDesktopChanged() {
+  const uint32_t state = g_showDesktop ? 1 : 0;
+
+  for (auto *manager : g_managers) {
+    org_kde_plasma_window_management_send_show_desktop_changed(manager, state);
+  }
+}
+
+static void setShowDesktop(bool enabled) {
+  if (enabled == g_showDesktop)
+    return;
+
+  if (enabled) {
+    // Save the focused window before clearing focus.
+    g_showDesktopFocusedWindow = Desktop::focusState()->window();
+
+    if (g_showDesktopFocusedWindow.lock()) {
+      Desktop::focusState()->fullWindowFocus(
+          nullptr, Desktop::FOCUS_REASON_DESKTOP_STATE_CHANGE);
+    }
+
+    g_showDesktop = true;
+
+    // Hide every mapped window, including windows on inactive workspaces
+    // and other monitors.
+    for (const auto &window : Desktop::windowState()->windows())
+      hideWindowForShowDesktop(window);
+  } else {
+    g_showDesktop = false;
+
+    // Restore only the windows this implementation hid. Windows which were
+    // already hidden before show-desktop was enabled remain hidden.
+    auto hiddenWindows = std::move(g_showDesktopHiddenWindows);
+    g_showDesktopHiddenWindows.clear();
+
+    for (const auto &weak : hiddenWindows) {
+      auto window = weak.lock();
+
+      if (window && window->m_isMapped && window->isHidden())
+        window->setHidden(false);
+    }
+
+    // Restore focus only if the old window still exists and its workspace
+    // is currently visible. Don't unexpectedly switch workspaces here.
+    auto focused = g_showDesktopFocusedWindow.lock();
+    g_showDesktopFocusedWindow.reset();
+
+    if (focused && focused->m_isMapped && !focused->isHidden() &&
+        focused->m_workspace && focused->m_workspace->m_visible) {
+      Desktop::focusState()->fullWindowFocus(
+          focused, Desktop::FOCUS_REASON_DESKTOP_STATE_CHANGE);
+    }
+  }
+
+  notifyShowDesktopChanged();
+}
+
 // -----------------------------------------------------------------------------
 // Management requests
 // -----------------------------------------------------------------------------
 
-static void managerShowDesktop(wl_client *, wl_resource *, uint32_t) {
-  // Show-desktop is not implemented yet.
+static void managerShowDesktop(wl_client *, wl_resource *, uint32_t state) {
+  setShowDesktop(state != 0);
 }
 
 static void managerGetWindow(wl_client *client, wl_resource *manager,
@@ -807,7 +1149,8 @@ static void bindWindowManagement(wl_client *client, void *,
 
   g_managers.insert(resource);
 
-  org_kde_plasma_window_management_send_show_desktop_changed(resource, 0);
+  org_kde_plasma_window_management_send_show_desktop_changed(
+      resource, g_showDesktop ? 1 : 0);
 
   for (const auto &window : Desktop::windowState()->windows()) {
     if (!window || !window->m_isMapped)
@@ -894,6 +1237,9 @@ void window_management_init(void) {
       g_pCompositor->m_wlDisplay, &org_kde_plasma_window_management_interface,
       MANAGEMENT_VERSION, nullptr, bindWindowManagement);
 
+  g_listeners.openLate = Event::bus()->m_events.window.openLate.listen(
+      [](PHLWINDOW window) { hideWindowForShowDesktop(window); });
+
   if (!g_windowManagementGlobal) {
     hyprplasma::log(Log::ERR, "Failed to register Plasma window management");
 
@@ -905,6 +1251,8 @@ void window_management_init(void) {
 }
 
 void window_management_exit(void) {
+  if (g_showDesktop)
+    setShowDesktop(false);
   if (g_windowManagementGlobal) {
     wl_global_destroy(g_windowManagementGlobal);
     g_windowManagementGlobal = nullptr;
@@ -918,6 +1266,7 @@ void window_management_exit(void) {
   g_listeners.pin.reset();
   g_listeners.urgent.reset();
   g_listeners.tick.reset();
+  g_listeners.openLate.reset();
 
   // Destroy resources before the state objects they refer to.
   std::vector<wl_resource *> windowResources;
@@ -940,6 +1289,7 @@ void window_management_exit(void) {
   g_windowResources.clear();
   g_managers.clear();
   g_lastStackingOrder.clear();
+  g_desktopIconCache.clear();
 }
 
 } // namespace proto

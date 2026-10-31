@@ -15,8 +15,8 @@ void init(void) {
   proto::window_management_init();
 }
 void exit(void) {
-  proto::plasma_shell_exit();
-  proto::plasma_virtualdesktop_exit();
   proto::window_management_exit();
+  proto::plasma_virtualdesktop_exit();
+  proto::plasma_shell_exit();
 }
 } // namespace hyprplasma
