@@ -3,7 +3,7 @@
 #include <hyprutils/cli/Logger.hpp>
 
 #include "hyprplasma.hpp"
-#include "plasmaproto-shell.hpp"
+#include "protocols/shell.hpp"
 
 namespace hyprplasma {
 

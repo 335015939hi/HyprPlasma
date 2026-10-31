@@ -20,9 +20,9 @@
 
 #include "plasma-shell-server-protocol.h"
 
-#include "hyprplasma.hpp"
+#include "../hyprplasma.hpp"
 
-#include "plasmaproto-shell.hpp"
+#include "shell.hpp"
 
 struct PlasmaSurfaceState {
   wl_resource *resource = nullptr;

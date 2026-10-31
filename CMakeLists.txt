@@ -23,7 +23,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_library(${PROJECT_NAME} SHARED
     src/main.cpp
     src/hyprplasma.cpp
-    src/plasmaproto-shell.cpp
+    src/protocols/shell.cpp
 )
 
 # ---------------------------------------------------------------------------
