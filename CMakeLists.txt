@@ -25,6 +25,7 @@ add_library(${PROJECT_NAME} SHARED
     src/hyprplasma.cpp
     src/protocols/shell.cpp
     src/protocols/virtualdesktop.cpp
+    src/protocols/windowmanagement.cpp
 )
 
 # ---------------------------------------------------------------------------

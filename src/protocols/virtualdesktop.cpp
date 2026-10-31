@@ -709,5 +709,21 @@ void plasma_virtualdesktop_exit(void) {
   g_workspaceOrder.clear();
 }
 
+std::string virtualdesktop_id_for_workspace(CWorkspace *workspace) {
+  if (!workspace)
+    return {};
+
+  auto it = g_workspaces.find(workspace);
+  if (it == g_workspaces.end())
+    return {};
+
+  return it->second->id;
+}
+
+PHLWORKSPACE virtualdesktop_workspace_for_id(const std::string &id) {
+  auto *watch = findWorkspace(id);
+  return watch ? watch->workspace.lock() : nullptr;
+}
+
 } // namespace proto
 } // namespace hyprplasma
