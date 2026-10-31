@@ -97,8 +97,11 @@ static bool updateGeometry(PlasmaSurfaceState *state) {
 
   // Preserve the existing position unless Plasma supplied one.
   auto pos = box.pos();
-  if (state->set_position_pending)
+  if (state->set_position_pending) {
     pos = Vector2D{double(state->x), double(state->y)};
+    // all paths currently succeed, that's why this can go here.
+    state->set_position_pending = false;
+  }
 
   CBox newBox{pos, size};
 
