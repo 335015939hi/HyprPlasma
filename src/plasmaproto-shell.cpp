@@ -8,9 +8,11 @@
 #include <hyprland/src/desktop/view/types/GeometricMovable.hpp>
 #include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/layout/LayoutManager.hpp>
+#include <hyprland/src/layout/target/Target.hpp>
 #include <hyprland/src/protocols/XDGShell.hpp>
 #include <hyprland/src/protocols/core/Compositor.hpp>
 #include <hyprland/src/protocols/core/Output.hpp>
+#include <hyprland/src/render/Renderer.hpp>
 #include <hyprutils/math/Vector2D.hpp>
 #include <new>
 #include <unordered_map>
@@ -29,9 +31,11 @@ struct PlasmaSurfaceState {
   bool roleSet = false;
   uint32_t role = 0;
   int32_t x = 0;
+  int32_t y = 0;
   bool set_position_pending = false;
   bool positionSet = false;
-  int32_t y = 0;
+  uint32_t last_height = 0;
+  uint32_t last_width = 0;
   SP<CWLSurfaceResource> hyprSurface;
   PHLMONITORREF monitor;
   struct {
@@ -67,48 +71,43 @@ static void bindPlasmaShell(wl_client *client, void *data, uint32_t version,
   wl_resource_set_implementation(resource, &s_shellImpl, data, nullptr);
 }
 
-static bool applyPosition(PlasmaSurfaceState *state) {
-  if (!state) {
-    return false;
-  }
-  if (!state->hyprSurface) {
-    return false;
-  }
-  // if (!state->set_position_pending) {
-  // return false;
-  //}
-
-  // Resolve Hyprland's higher-level surface wrapper.
-  auto hlSurface = Desktop::View::CWLSurface::fromResource(state->hyprSurface);
-  if (!hlSurface)
+static bool updateGeometry(PlasmaSurfaceState *state) {
+  if (!state || !state->hyprSurface)
     return false;
 
-  // Find the compositor view associated with this surface.
-  auto view = hlSurface->view();
-
-  if (!view) {
-    hyprplasma::log(Log::DEBUG, "Plasma surface has no compositor view yet");
+  auto surface = Desktop::View::CWLSurface::fromResource(state->hyprSurface);
+  if (!surface)
     return false;
-  }
 
-  auto window = Desktop::View::CWindow::fromView(view);
-  if (!window) {
+  auto window = Desktop::View::CWindow::fromView(surface->view());
+  if (!window || window->m_isX11)
     return false;
-  }
-  window->positionAnimation()->setValueAndWarp(Vector2D{state->x, state->y});
 
-  /*
-  // Not every view supports arbitrary movement.
-  auto movable = dynamicPointerCast<Desktop::View::IGeometricMovable>(view);
-  if (!movable) {
-    hyprplasma::log(Log::DEBUG, "Plasma surface view type is not movable");
+  auto xdg = window->m_xdgSurface.lock();
+  auto target = window->layoutTarget();
+  if (!xdg || !target || !target->space())
     return false;
-  }
 
-  movable->move(
-      Vector2D{static_cast<double>(state->x), static_cast<double>(state->y)});
-*/
-  state->set_position_pending = false;
+  // Use committed XDG window geometry, not the raw buffer dimensions.
+  auto size = xdg->m_current.geometry.size();
+
+  if (size.x <= 0 || size.y <= 0)
+    return false;
+
+  auto box = target->position();
+
+  // Preserve the existing position unless Plasma supplied one.
+  auto pos = box.pos();
+  if (state->positionSet)
+    pos = Vector2D{double(state->x), double(state->y)};
+
+  CBox newBox{pos, size};
+
+  if (box.pos() == newBox.pos() && box.size() == newBox.size())
+    return true;
+
+  target->setPositionGlobal(newBox, Layout::TARGET_UPDATE_NO_CLIENT_CONFIGURE);
+
   return true;
 }
 
@@ -130,7 +129,7 @@ static void openWindowListener(PHLWINDOW window) {
     if (state->positionSet) {
       state->set_position_pending = true;
 
-      if (!applyPosition(state)) {
+      if (!updateGeometry(state)) {
         hyprplasma::log(Log::WARN,
                         "Could not apply initial position to Plasma surface");
         window->m_isFloating = true;
@@ -222,7 +221,7 @@ static void surfaceSetOutput(wl_client *, wl_resource *resource,
 
   // Retry an earlier position request if one is pending.
   if (state->set_position_pending)
-    applyPosition(state);
+    updateGeometry(state);
 }
 
 static void surfaceSetPosition(wl_client *, wl_resource *resource, int32_t x,
@@ -238,7 +237,7 @@ static void surfaceSetPosition(wl_client *, wl_resource *resource, int32_t x,
 
   state->set_position_pending = true;
   state->positionSet = true;
-  applyPosition(state);
+  updateGeometry(state);
 
   auto hlSurface = Desktop::View::CWLSurface::fromResource(state->hyprSurface);
   if (hlSurface) {
@@ -373,21 +372,30 @@ static void handleGetSurface(wl_client *client, wl_resource *shellResource,
   state->listeners.commit = state->hyprSurface->m_events.commit.listen([state] {
     const auto &current = state->hyprSurface->m_current;
 
-    applyPosition(state);
+    updateGeometry(state);
 
     auto hlSurface =
         Desktop::View::CWLSurface::fromResource(state->hyprSurface);
     if (hlSurface) {
       auto view = hlSurface->view();
       if (view) {
-        auto movable =
-            dynamicPointerCast<Desktop::View::IGeometricMovable>(view);
-        if (movable) {
-          movable->resize(current.size);
-        }
 
         auto window = Desktop::View::CWindow::fromView(view);
         if (window && !window->m_isX11) {
+          updateGeometry(state);
+          // resize the window, if window size changed
+          /*if (state->last_width != static_cast<uint32_t>(current.size.x) ||
+              state->last_height != static_cast<uint32_t>(current.size.y)) {
+            state->last_width = static_cast<uint32_t>(current.size.x);
+            state->last_height = static_cast<uint32_t>(current.size.y);
+            // Invalidate the old window bounds.
+            g_pHyprRenderer->damageWindow(window);
+            // Resize immediately, without a size animation.
+            window->sizeAnimation()->setValueAndWarp(current.size);
+            // Invalidate the new window bounds.
+            g_pHyprRenderer->damageWindow(window);
+          }*/
+
           // hide tooltips without positions
           if (state->role == ORG_KDE_PLASMA_SURFACE_ROLE_TOOLTIP) {
             if (!state->positionSet) {
