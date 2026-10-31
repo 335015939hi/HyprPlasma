@@ -24,6 +24,7 @@ add_library(${PROJECT_NAME} SHARED
     src/main.cpp
     src/hyprplasma.cpp
     src/protocols/shell.cpp
+    src/protocols/virtualdesktop.cpp
 )
 
 # ---------------------------------------------------------------------------
@@ -51,7 +52,13 @@ find_program(WAYLAND_SCANNER
     REQUIRED
 )
 # Select the protocol XML to implement.
-set(PLASMA_PROTOCOLS plasma-window-management plasma-shell plasma-virtual-desktop)
+set(
+  PLASMA_PROTOCOLS
+  plasma-window-management
+  plasma-shell
+  plasma-virtual-desktop
+  # org-kde-plasma-virtual-desktop seems to be the same as plasma-virtual-desktop
+)
 
 
 set(PLASMA_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
