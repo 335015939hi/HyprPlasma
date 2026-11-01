@@ -1043,7 +1043,7 @@ static void setWindowHiddenWithAnimation(PHLWINDOW window, bool hidden) {
 
   window->setInputBlocked(INPUT_BLOCK_SHOW_DESKTOP, hidden);
 
-  auto fade = window->alpha(Desktop::View::WINDOW_ALPHA_FADE);
+  auto& fade = window->alpha(Desktop::View::WINDOW_ALPHA_FADE);
   fade->setConfig(Config::animationTree()->getAnimationPropertyConfig(
       hidden ? "fadeOut" : "fadeIn"));
   *fade = hidden ? 0.F : 1.F;
