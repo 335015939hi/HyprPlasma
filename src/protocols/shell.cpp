@@ -38,6 +38,7 @@ struct PlasmaSurfaceState {
   bool no_initial_focus = false;
   bool no_decorations = false;
   bool skip_taskbar = false;
+  bool hide_when_showdesktop = true;
   SP<CWLSurfaceResource> hyprSurface;
   PHLMONITORREF monitor;
   struct {
@@ -256,16 +257,19 @@ static void surfaceSetRole(wl_client *, wl_resource *resource, uint32_t role) {
   }
   switch (role) {
   case ORG_KDE_PLASMA_SURFACE_ROLE_NORMAL:
+    state->hide_when_showdesktop = false;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_DESKTOP:
     state->no_decorations = true;
     state->skip_taskbar = true;
+    state->hide_when_showdesktop = false;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_PANEL:
     state->no_decorations = true;
     state->skip_taskbar = true;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_ONSCREENDISPLAY:
+    state->hide_when_showdesktop = false;
     state->skip_taskbar = true;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_NOTIFICATION:
@@ -273,6 +277,7 @@ static void surfaceSetRole(wl_client *, wl_resource *resource, uint32_t role) {
     state->no_initial_focus = true;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_TOOLTIP:
+    state->hide_when_showdesktop = false;
     state->skip_taskbar = true;
     state->no_decorations = true;
     break;
@@ -280,6 +285,7 @@ static void surfaceSetRole(wl_client *, wl_resource *resource, uint32_t role) {
     state->skip_taskbar = true;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_APPLETPOPUP:
+    state->hide_when_showdesktop = false;
     break;
   default:
     hyprplasma::log(Log::ERR, "surfaceSetRole: invalid role {}", role);
@@ -460,6 +466,20 @@ bool plasma_surface_skips_taskbar(Desktop::View::CWindow *window) {
   }
 
   return false;
+}
+bool hide_when_show_desktop(Desktop::View::CWindow *window) {
+  if (!window || !window->wlSurface())
+    return true;
+  auto windowSurface = window->wlSurface()->resource();
+  if (!windowSurface)
+    return true;
+  for (const auto &[_, state] : g_surfaces) {
+    if (!state || !state->hyprSurface)
+      continue;
+    if (state->hyprSurface.get() == windowSurface.get())
+      return state->hide_when_showdesktop;
+  }
+  return true;
 }
 
 void plasma_shell_init(void) {

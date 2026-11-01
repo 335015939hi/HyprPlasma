@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <debug/log/Logger.hpp>
 #include <desktop/Workspace.hpp>
 #include <desktop/state/FocusState.hpp>
 #include <desktop/state/WindowState.hpp>
@@ -1013,6 +1014,10 @@ static void createWindowResource(wl_client *client, wl_resource *manager,
 static void hideWindowForShowDesktop(PHLWINDOW window) {
   if (!g_showDesktop || !window || !window->m_isMapped || window->isHidden())
     return;
+  if (!hyprplasma::proto::hide_when_show_desktop(window.get())) {
+    hyprplasma::log(Log::INFO, "not hiding a window");
+    return;
+  }
 
   // Avoid recording the same window twice.
   for (const auto &weak : g_showDesktopHiddenWindows) {
@@ -1056,8 +1061,9 @@ static void setShowDesktop(bool enabled) {
 
     // Hide every mapped window, including windows on inactive workspaces
     // and other monitors.
-    for (const auto &window : Desktop::windowState()->windows())
+    for (const auto &window : Desktop::windowState()->windows()) {
       hideWindowForShowDesktop(window);
+    }
   } else {
     g_showDesktop = false;
 
