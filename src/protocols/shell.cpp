@@ -272,6 +272,7 @@ static void surfaceSetRole(wl_client *, wl_resource *resource, uint32_t role) {
     state->no_decorations = true;
     state->hide_when_showdesktop = false;
     state->skip_taskbar = true;
+    state->should_float = true;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_ONSCREENDISPLAY:
     state->hide_when_showdesktop = false;
