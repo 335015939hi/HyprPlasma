@@ -2,6 +2,7 @@
 #include <Compositor.hpp>
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -129,6 +130,15 @@ static bool g_showDesktop = false;
 static PHLWINDOWREF g_showDesktopFocusedWindow;
 static std::vector<PHLWINDOWREF> g_showDesktopHiddenWindows;
 
+// Geometry has no general position-changed signal in this Hyprland version,
+// so poll it separately at a bounded rate. Stacking is event-driven where
+// possible, with a slower poll as a fallback for direct raise()/lower() calls.
+static PHLWINDOWREF g_lastActiveWindow;
+static std::chrono::steady_clock::time_point g_lastGeometryPoll{};
+static std::chrono::steady_clock::time_point g_lastStackingPoll{};
+static constexpr auto GEOMETRY_POLL_INTERVAL = std::chrono::milliseconds{33};
+static constexpr auto STACKING_POLL_INTERVAL = std::chrono::milliseconds{250};
+
 static struct {
   CHyprSignalListener open;
   CHyprSignalListener active;
@@ -137,6 +147,8 @@ static struct {
   CHyprSignalListener moveToWorkspace;
   CHyprSignalListener pin;
   CHyprSignalListener urgent;
+  CHyprSignalListener floating;
+  CHyprSignalListener fullscreen;
   CHyprSignalListener tick;
   CHyprSignalListener openLate;
 } g_listeners;
@@ -432,7 +444,7 @@ static uint32_t stateForWindow(CWindow *window) {
 // -----------------------------------------------------------------------------
 
 static void sendTitle(WindowWatch *watch, CWindow *window) {
-  if (!watch || !window)
+  if (!watch || !window || watch->resources.empty())
     return;
 
   if (watch->title == window->m_title)
@@ -445,7 +457,7 @@ static void sendTitle(WindowWatch *watch, CWindow *window) {
 }
 
 static void sendIconName(WindowWatch *watch, CWindow *window) {
-  if (!watch || !window)
+  if (!watch || !window || watch->resources.empty())
     return;
 
   const auto resolved = desktopIconForAppId(window->m_class);
@@ -471,7 +483,7 @@ static void sendIconName(WindowWatch *watch, CWindow *window) {
 }
 
 static void sendAppId(WindowWatch *watch, CWindow *window) {
-  if (!watch || !window)
+  if (!watch || !window || watch->resources.empty())
     return;
 
   if (watch->appId == window->m_class)
@@ -486,7 +498,7 @@ static void sendAppId(WindowWatch *watch, CWindow *window) {
 }
 
 static void sendState(WindowWatch *watch, CWindow *window) {
-  if (!watch || !window)
+  if (!watch || !window || watch->resources.empty())
     return;
 
   const auto state = stateForWindow(window);
@@ -502,7 +514,13 @@ static void sendState(WindowWatch *watch, CWindow *window) {
 }
 
 static void sendGeometry(WindowWatch *watch, CWindow *window) {
-  if (!watch || !window)
+  if (!watch || !window || watch->resources.empty())
+    return;
+
+  const bool hasGeometryResource = std::any_of(
+      watch->resources.begin(), watch->resources.end(),
+      [](wl_resource *resource) { return wl_resource_get_version(resource) >= 6; });
+  if (!hasGeometryResource)
     return;
 
   const auto geometry = geometryForWindow(window);
@@ -523,7 +541,7 @@ static void sendGeometry(WindowWatch *watch, CWindow *window) {
 }
 
 static void sendDesktopMembership(WindowWatch *watch, CWindow *window) {
-  if (!watch || !window)
+  if (!watch || !window || watch->resources.empty())
     return;
 
   // An empty desktop list means "on all desktops" in this protocol.
@@ -558,21 +576,6 @@ static void sendDesktopMembership(WindowWatch *watch, CWindow *window) {
 
   watch->desktopId = nextDesktop;
   watch->desktopValid = true;
-}
-
-static void updateWindow(WindowWatch *watch) {
-  if (!watch || !watch->announced)
-    return;
-
-  auto window = watch->window.lock();
-  if (!window || !window->m_isMapped)
-    return;
-
-  sendTitle(watch, window.get());
-  sendAppId(watch, window.get());
-  sendState(watch, window.get());
-  sendGeometry(watch, window.get());
-  sendDesktopMembership(watch, window.get());
 }
 
 static void sendInitialWindowState(WindowWatch *watch, wl_resource *resource) {
@@ -791,6 +794,11 @@ static std::vector<std::string> currentStackingOrder() {
 }
 
 static void notifyStackingOrderChanged() {
+  // No client can consume this notification yet. The cache is initialized
+  // when the first manager binds.
+  if (g_managers.empty())
+    return;
+
   const auto order = currentStackingOrder();
 
   if (order == g_lastStackingOrder)
@@ -1164,6 +1172,7 @@ static void bindWindowManagement(wl_client *client, void *,
   }
 
   g_managers.insert(resource);
+  g_lastStackingOrder = currentStackingOrder();
 
   org_kde_plasma_window_management_send_show_desktop_changed(
       resource, g_showDesktop ? 1 : 0);
@@ -1188,11 +1197,64 @@ static void bindWindowManagement(wl_client *client, void *,
 // Periodic updates and event listeners
 // -----------------------------------------------------------------------------
 
-static void updateAllWindows() {
-  for (auto &[_, watch] : g_windows)
-    updateWindow(watch.get());
+static void updateActiveWindowState() {
+  // The active event is emitted for focus transitions. Only the previously
+  // focused and newly focused windows can have their ACTIVE bit changed.
+  auto previous = g_lastActiveWindow.lock();
+  auto current = Desktop::focusState()->window();
 
+  if (previous) {
+    if (auto *watch = findWindow(previous.get()))
+      sendState(watch, previous.get());
+  }
+
+  if (current && current != previous) {
+    if (auto *watch = findWindow(current.get()))
+      sendState(watch, current.get());
+  }
+
+  g_lastActiveWindow = current;
   notifyStackingOrderChanged();
+}
+
+static void pollWindowGeometries() {
+  if (g_managers.empty())
+    return;
+
+  for (auto &[_, watch] : g_windows) {
+    if (!watch || !watch->announced || watch->resources.empty())
+      continue;
+
+    auto window = watch->window.lock();
+    if (!window || !window->m_isMapped)
+      continue;
+
+    sendGeometry(watch.get(), window.get());
+  }
+}
+
+static void handleCompositorTick() {
+  if (g_managers.empty())
+    return;
+
+  const auto now = std::chrono::steady_clock::now();
+
+  // Position changes do not have a general CWindow signal in this Hyprland
+  // version. Keep geometry fresh, but do not do it at render/tick frequency.
+  if (g_lastGeometryPoll == std::chrono::steady_clock::time_point{} ||
+      now - g_lastGeometryPoll >= GEOMETRY_POLL_INTERVAL) {
+    g_lastGeometryPoll = now;
+    pollWindowGeometries();
+  }
+
+  // CWindowState::raise()/lower() has no corresponding EventBus event.
+  // Known stacking changes notify immediately; this slower poll catches
+  // changes made through those unsignalled paths.
+  if (g_lastStackingPoll == std::chrono::steady_clock::time_point{} ||
+      now - g_lastStackingPoll >= STACKING_POLL_INTERVAL) {
+    g_lastStackingPoll = now;
+    notifyStackingOrderChanged();
+  }
 }
 
 namespace hyprplasma {
@@ -1207,6 +1269,10 @@ void window_management_update_state(Desktop::View::CWindow *window) {
 }
 
 void window_management_init(void) {
+  g_lastActiveWindow = Desktop::focusState()->window();
+  g_lastGeometryPoll = {};
+  g_lastStackingPoll = {};
+
   // Register windows that already exist before the plugin was loaded.
   for (const auto &window : Desktop::windowState()->windows()) {
     if (window && window->m_isMapped)
@@ -1217,9 +1283,9 @@ void window_management_init(void) {
   g_listeners.open = Event::bus()->m_events.window.open.listen(
       [](PHLWINDOW window) { registerWindow(window); });
 
-  // Update properties which can change without a geometry/workspace change.
+  // Focus only changes the ACTIVE state of the old and new focused windows.
   g_listeners.active = Event::bus()->m_events.window.active.listen(
-      [](PHLWINDOW, Desktop::eFocusReason) { updateAllWindows(); });
+      [](PHLWINDOW, Desktop::eFocusReason) { updateActiveWindowState(); });
 
   g_listeners.title =
       Event::bus()->m_events.window.title.listen([](PHLWINDOW window) {
@@ -1237,13 +1303,17 @@ void window_management_init(void) {
       Event::bus()->m_events.window.moveToWorkspace.listen(
           [](PHLWINDOW window, PHLWORKSPACE) {
             if (auto *watch = findWindow(window.get()))
-              updateWindow(watch);
+              sendDesktopMembership(watch, window.get());
+            notifyStackingOrderChanged();
           });
 
   g_listeners.pin =
       Event::bus()->m_events.window.pin.listen([](PHLWINDOW window) {
-        if (auto *watch = findWindow(window.get()))
-          updateWindow(watch);
+        if (auto *watch = findWindow(window.get())) {
+          sendState(watch, window.get());
+          sendDesktopMembership(watch, window.get());
+        }
+        notifyStackingOrderChanged();
       });
 
   g_listeners.urgent =
@@ -1252,10 +1322,21 @@ void window_management_init(void) {
           sendState(watch, window.get());
       });
 
-  // Hyprland does not expose a general position-changed signal on CWindow.
-  // Compare geometry on ticks, but send Wayland events only when it changed.
+  // These transitions can affect the compositor's effective stacking order.
+  g_listeners.floating =
+      Event::bus()->m_events.window.floating.listen([](PHLWINDOW) {
+        notifyStackingOrderChanged();
+      });
+
+  g_listeners.fullscreen =
+      Event::bus()->m_events.window.fullscreen.listen([](PHLWINDOW) {
+        notifyStackingOrderChanged();
+      });
+
+  // Only geometry and a low-frequency stacking fallback are polled. Metadata,
+  // focus state, and desktop membership are updated by their own events.
   g_listeners.tick =
-      Event::bus()->m_events.tick.listen([] { updateAllWindows(); });
+      Event::bus()->m_events.tick.listen([] { handleCompositorTick(); });
 
   g_windowManagementGlobal = wl_global_create(
       g_pCompositor->m_wlDisplay, &org_kde_plasma_window_management_interface,
@@ -1289,6 +1370,8 @@ void window_management_exit(void) {
   g_listeners.moveToWorkspace.reset();
   g_listeners.pin.reset();
   g_listeners.urgent.reset();
+  g_listeners.floating.reset();
+  g_listeners.fullscreen.reset();
   g_listeners.tick.reset();
   g_listeners.openLate.reset();
 
@@ -1313,6 +1396,9 @@ void window_management_exit(void) {
   g_windowResources.clear();
   g_managers.clear();
   g_lastStackingOrder.clear();
+  g_lastActiveWindow.reset();
+  g_lastGeometryPoll = {};
+  g_lastStackingPoll = {};
   g_desktopIconCache.clear();
 }
 
