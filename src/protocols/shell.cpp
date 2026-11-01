@@ -39,6 +39,7 @@ struct PlasmaSurfaceState {
   bool no_decorations = false;
   bool skip_taskbar = false;
   bool hide_when_showdesktop = true;
+  bool should_float = false;
   SP<CWLSurfaceResource> hyprSurface;
   PHLMONITORREF monitor;
   struct {
@@ -138,7 +139,9 @@ static void openWindowListener(PHLWINDOW window) {
         hyprplasma::log(Log::WARN,
                         "Could not apply initial position to Plasma surface");
         // set floating directly. going through the layout manager breaks things
-        window->m_isFloating = true;
+        if (state->should_float) {
+          window->m_isFloating = true;
+        }
       } else {
         hyprplasma::log(Log::DEBUG, "Applied initial Plasma position {}, {}",
                         state->x, state->y);
@@ -258,6 +261,7 @@ static void surfaceSetRole(wl_client *, wl_resource *resource, uint32_t role) {
   switch (role) {
   case ORG_KDE_PLASMA_SURFACE_ROLE_NORMAL:
     state->hide_when_showdesktop = false;
+    state->should_float = true;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_DESKTOP:
     state->no_decorations = true;
@@ -272,22 +276,27 @@ static void surfaceSetRole(wl_client *, wl_resource *resource, uint32_t role) {
   case ORG_KDE_PLASMA_SURFACE_ROLE_ONSCREENDISPLAY:
     state->hide_when_showdesktop = false;
     state->skip_taskbar = true;
+    state->should_float = true;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_NOTIFICATION:
     state->skip_taskbar = true;
     state->no_initial_focus = true;
+    state->should_float = true;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_TOOLTIP:
     state->hide_when_showdesktop = false;
     state->skip_taskbar = true;
+    state->should_float = true;
     state->no_decorations = true;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_CRITICALNOTIFICATION:
     state->hide_when_showdesktop = false;
+    state->should_float = true;
     state->skip_taskbar = true;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_APPLETPOPUP:
     state->hide_when_showdesktop = false;
+    state->should_float = true;
     break;
   default:
     hyprplasma::log(Log::ERR, "surfaceSetRole: invalid role {}", role);
@@ -394,6 +403,7 @@ static void handleGetSurface(wl_client *client, wl_resource *shellResource,
     wl_resource_post_error(shellResource, 0,
                            "Could not resolve Hyprland wl_surface");
     hyprplasma::log(Log::ERR, "Could not resolve Hyprland wl_surface");
+    delete state;
     return;
   }
 
@@ -423,7 +433,9 @@ static void handleGetSurface(wl_client *client, wl_resource *shellResource,
         if (window) {
           // set floating directly. going through the layout manager breaks
           // things
-          window->m_isFloating = true;
+          if (state->should_float) {
+            window->m_isFloating = true;
+          }
           auto xdg = window->m_xdgSurface.lock();
           auto toplevel = xdg ? xdg->m_toplevel.lock() : nullptr;
 
@@ -502,6 +514,19 @@ void plasma_shell_exit(void) {
   if (g_windowOpenListener) {
     g_windowOpenListener.reset();
   }
+
+  std::vector<wl_resource *> resources;
+  resources.reserve(g_surfaces.size());
+
+  for (const auto &[_, state] : g_surfaces) {
+    if (state && state->resource)
+      resources.push_back(state->resource);
+  }
+
+  for (auto *resource : resources)
+    wl_resource_destroy(resource);
+
+  g_surfaces.clear();
 
   if (g_plasmaShell) {
     wl_global_destroy(g_plasmaShell);

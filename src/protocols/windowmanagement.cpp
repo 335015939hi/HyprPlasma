@@ -408,9 +408,9 @@ static uint32_t stateForWindow(CWindow *window) {
   if (!window)
     return 0;
 
-  uint32_t state = WindowState::CLOSEABLE | WindowState::MOVABLE |
-                   WindowState::RESIZABLE |
-                   WindowState::VIRTUAL_DESKTOP_CHANGEABLE;
+  uint32_t state =
+      WindowState::CLOSEABLE | WindowState::MOVABLE | WindowState::RESIZABLE |
+      WindowState::VIRTUAL_DESKTOP_CHANGEABLE | WindowState::FULLSCREENABLE;
 
   if (Desktop::focusState()->window() == window->m_self.lock())
     state |= WindowState::ACTIVE;
@@ -449,7 +449,7 @@ static void sendIconName(WindowWatch *watch, CWindow *window) {
     return;
 
   const auto resolved = desktopIconForAppId(window->m_class);
-  const std::string nextIcon = resolved.value_or("");
+  const std::string nextIcon = resolved ? resolved->c_str() : nullptr;
 
   if (watch->iconValid && watch->iconName == nextIcon)
     return;
@@ -880,6 +880,8 @@ static void windowRequestSetState(wl_client *, wl_resource *resource,
 
 static void windowRequestSetVirtualDesktop(wl_client *, wl_resource *,
                                            uint32_t) {
+  hyprplasma::log(Log::ERR,
+                  "windowRequestSetVirtualDesktop deprecated, not implemented");
   // Deprecated numeric desktop API. Modern Plasma clients use desktop IDs.
 }
 
@@ -899,9 +901,13 @@ static void windowRequestClose(wl_client *, wl_resource *resource) {
     window->sendClose();
 }
 
-static void windowRequestMove(wl_client *, wl_resource *) {}
+static void windowRequestMove(wl_client *, wl_resource *) {
+  hyprplasma::log(Log::ERR, "windowRequestMove not implemented");
+}
 
-static void windowRequestResize(wl_client *, wl_resource *) {}
+static void windowRequestResize(wl_client *, wl_resource *) {
+  hyprplasma::log(Log::ERR, "windowRequestResize not implemented");
+}
 
 static void windowRequestDestroy(wl_client *, wl_resource *resource) {
   wl_resource_destroy(resource);
