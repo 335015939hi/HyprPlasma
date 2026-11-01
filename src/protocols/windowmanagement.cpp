@@ -133,7 +133,7 @@ static std::unordered_map<std::string, std::optional<std::string>>
 // Keep show-desktop blocking independent so clearing it does not clear other
 // reasons owned by the compositor.
 static constexpr auto INPUT_BLOCK_SHOW_DESKTOP =
-    static_cast<CWindow::eWindowInputBlockReason>(1u << 3);
+    static_cast<Desktop::View::eWindowInputBlockReason>(1u << 3);
 
 static bool g_showDesktop = false;
 static PHLWINDOWREF g_showDesktopFocusedWindow;
