@@ -461,7 +461,7 @@ static void sendIconName(WindowWatch *watch, CWindow *window) {
     return;
 
   const auto resolved = desktopIconForAppId(window->m_class);
-  const std::string nextIcon = resolved ? resolved->c_str() : nullptr;
+  const std::string nextIcon = resolved.value_or("");
 
   if (watch->iconValid && watch->iconName == nextIcon)
     return;
@@ -472,13 +472,13 @@ static void sendIconName(WindowWatch *watch, CWindow *window) {
   watch->iconValid = true;
 
   // Don't send an unnecessary empty icon on the first lookup.
-  // An empty name is useful when clearing a previously supplied icon.
+  // A null name clears a previously supplied themed icon.
   if (nextIcon.empty() && !hadPreviousIcon)
     return;
 
+  const char *iconName = resolved ? resolved->c_str() : nullptr;
   for (auto *resource : watch->resources) {
-    org_kde_plasma_window_send_themed_icon_name_changed(resource,
-                                                        nextIcon.c_str());
+    org_kde_plasma_window_send_themed_icon_name_changed(resource, iconName);
   }
 }
 
