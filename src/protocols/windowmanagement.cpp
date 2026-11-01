@@ -5,6 +5,8 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <config/ConfigManager.hpp>
+#include <config/shared/animation/AnimationTree.hpp>
 #include <cstdlib>
 #include <debug/log/Logger.hpp>
 #include <desktop/Workspace.hpp>
@@ -126,6 +128,13 @@ static std::vector<std::string> g_lastStackingOrder;
 
 static std::unordered_map<std::string, std::optional<std::string>>
     g_desktopIconCache;
+
+// Hyprland 0.56.2 currently uses bits 0-2 for its own input-block reasons.
+// Keep show-desktop blocking independent so clearing it does not clear other
+// reasons owned by the compositor.
+static constexpr auto INPUT_BLOCK_SHOW_DESKTOP =
+    static_cast<CWindow::eWindowInputBlockReason>(1u << 3);
+
 static bool g_showDesktop = false;
 static PHLWINDOWREF g_showDesktopFocusedWindow;
 static std::vector<PHLWINDOWREF> g_showDesktopHiddenWindows;
@@ -1025,6 +1034,21 @@ static void createWindowResource(wl_client *client, wl_resource *manager,
   }
 }
 
+// Fade a window in or out using Hyprland's existing animation variable
+// and the user's configured fadeIn/fadeOut animations. Unlike an immediate
+// hidden-state toggle, this does not suspend the Wayland client.
+static void setWindowHiddenWithAnimation(PHLWINDOW window, bool hidden) {
+  if (!window || !window->m_isMapped)
+    return;
+
+  window->setInputBlocked(INPUT_BLOCK_SHOW_DESKTOP, hidden);
+
+  auto fade = window->alpha(Desktop::View::WINDOW_ALPHA_FADE);
+  fade->setConfig(Config::animationTree()->getAnimationPropertyConfig(
+      hidden ? "fadeOut" : "fadeIn"));
+  *fade = hidden ? 0.F : 1.F;
+}
+
 static void hideWindowForShowDesktop(PHLWINDOW window) {
   if (!g_showDesktop || !window || !window->m_isMapped || window->isHidden())
     return;
@@ -1039,15 +1063,15 @@ static void hideWindowForShowDesktop(PHLWINDOW window) {
       return;
   }
 
-  // setHidden() resets the focused-window reference, but does not perform
-  // the complete focus transition. Do that explicitly first.
+  // Preserve the desktop-state focus reason instead of relying on the
+  // generic focus transition performed by setInputBlocked().
   if (Desktop::focusState()->window() == window) {
     Desktop::focusState()->fullWindowFocus(
         nullptr, Desktop::FOCUS_REASON_DESKTOP_STATE_CHANGE);
   }
 
   g_showDesktopHiddenWindows.emplace_back(window);
-  window->setHidden(true);
+  setWindowHiddenWithAnimation(window, true);
 }
 
 static void notifyShowDesktopChanged() {
@@ -1089,8 +1113,8 @@ static void setShowDesktop(bool enabled) {
     for (const auto &weak : hiddenWindows) {
       auto window = weak.lock();
 
-      if (window && window->m_isMapped && window->isHidden())
-        window->setHidden(false);
+      if (window && window->m_isMapped)
+        setWindowHiddenWithAnimation(window, false);
     }
 
     // Restore focus only if the old window still exists and its workspace
