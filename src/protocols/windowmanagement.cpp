@@ -28,6 +28,7 @@
 #include "plasma-window-management-server-protocol.h"
 
 #include "../hyprplasma.hpp"
+#include "shell.hpp"
 #include "virtualdesktop.hpp"
 #include "windowmanagement.hpp"
 
@@ -415,6 +416,9 @@ static uint32_t stateForWindow(CWindow *window) {
 
   if (window->m_pinned)
     state |= WindowState::ON_ALL_DESKTOPS;
+
+  if (hyprplasma::proto::plasma_surface_skips_taskbar(window))
+    state |= WindowState::SKIP_TASKBAR;
 
   if (window->m_isUrgent)
     state |= WindowState::DEMANDS_ATTENTION;
@@ -1181,6 +1185,14 @@ static void updateAllWindows() {
 
 namespace hyprplasma {
 namespace proto {
+
+void window_management_update_state(Desktop::View::CWindow *window) {
+  if (!window)
+    return;
+
+  if (auto *watch = findWindow(window))
+    sendState(watch, window);
+}
 
 void window_management_init(void) {
   // Register windows that already exist before the plugin was loaded.

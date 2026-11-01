@@ -21,6 +21,7 @@
 #include "plasma-shell-server-protocol.h"
 
 #include "../hyprplasma.hpp"
+#include "windowmanagement.hpp"
 
 #include "shell.hpp"
 
@@ -36,6 +37,7 @@ struct PlasmaSurfaceState {
   bool positionSet = false;
   bool no_initial_focus = false;
   bool no_decorations = false;
+  bool skip_taskbar = false;
   SP<CWLSurfaceResource> hyprSurface;
   PHLMONITORREF monitor;
   struct {
@@ -257,19 +259,25 @@ static void surfaceSetRole(wl_client *, wl_resource *resource, uint32_t role) {
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_DESKTOP:
     state->no_decorations = true;
+    state->skip_taskbar = true;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_PANEL:
     state->no_decorations = true;
+    state->skip_taskbar = true;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_ONSCREENDISPLAY:
+    state->skip_taskbar = true;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_NOTIFICATION:
+    state->skip_taskbar = true;
     state->no_initial_focus = true;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_TOOLTIP:
+    state->skip_taskbar = true;
     state->no_decorations = true;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_CRITICALNOTIFICATION:
+    state->skip_taskbar = true;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_APPLETPOPUP:
     break;
@@ -287,8 +295,30 @@ static void surfaceSetPanelBehavior(wl_client *, wl_resource *,
   hyprplasma::log(Log::INFO, "surfaceSetPanelBehavior {}", behaviour);
 }
 
-static void surfaceSetSkipTaskbar(wl_client *, wl_resource *, uint32_t skip) {
+static void surfaceSetSkipTaskbar(wl_client *, wl_resource *resource,
+                                  uint32_t skip) {
   hyprplasma::log(Log::INFO, "surfaceSetSkipTaskbar {}", skip);
+  auto *state =
+      static_cast<PlasmaSurfaceState *>(wl_resource_get_user_data(resource));
+
+  if (!state)
+    return;
+
+  const bool next = skip != 0;
+
+  if (state->skip_taskbar == next)
+    return;
+
+  state->skip_taskbar = next;
+
+  // The surface may not belong to a mapped window yet.
+  auto surface = Desktop::View::CWLSurface::fromResource(state->hyprSurface);
+  if (!surface)
+    return;
+
+  auto window = Desktop::View::CWindow::fromView(surface->view());
+  if (window)
+    hyprplasma::proto::window_management_update_state(window.get());
 }
 
 static void surfacePanelAutoHideHide(wl_client *, wl_resource *) {
@@ -412,6 +442,26 @@ static void handleGetSurface(wl_client *client, wl_resource *shellResource,
 
 namespace hyprplasma {
 namespace proto {
+
+bool plasma_surface_skips_taskbar(Desktop::View::CWindow *window) {
+  if (!window || !window->wlSurface())
+    return false;
+
+  auto windowSurface = window->wlSurface()->resource();
+  if (!windowSurface)
+    return false;
+
+  for (const auto &[_, state] : g_surfaces) {
+    if (!state || !state->hyprSurface)
+      continue;
+
+    if (state->hyprSurface.get() == windowSurface.get())
+      return state->skip_taskbar;
+  }
+
+  return false;
+}
+
 void plasma_shell_init(void) {
   g_plasmaShell = wl_global_create(g_pCompositor->m_wlDisplay,
                                    &org_kde_plasma_shell_interface, 8, nullptr,
