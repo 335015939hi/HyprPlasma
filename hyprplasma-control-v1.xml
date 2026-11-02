@@ -10,6 +10,7 @@
       <description summary="Toggle the compositor's show-desktop state">
         Instruct the HyprPlasma plugin to toggle show-desktop.
       </description>
+      <arg name="dummy" type="uint" summary="dummy to get the thing to compile"></arg>
     </request>
   </interface>
 

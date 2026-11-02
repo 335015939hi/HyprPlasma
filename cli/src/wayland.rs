@@ -31,20 +31,12 @@ impl Dispatch<wl_registry::WlRegistry, ()> for RegistryState {
             version,
         } = event
         {
-            if interface != HyprplasmaControlV1::interface().name
-                || state.control.is_some()
-            {
+            if interface != HyprplasmaControlV1::interface().name || state.control.is_some() {
                 return;
             }
 
-            state.control = Some(
-                registry.bind::<HyprplasmaControlV1, _, _>(
-                    name,
-                    version.min(1),
-                    qh,
-                    (),
-                ),
-            );
+            state.control =
+                Some(registry.bind::<HyprplasmaControlV1, _, _>(name, version.min(1), qh, ()));
         }
     }
 }
@@ -58,7 +50,7 @@ wayland_client::delegate_noop!(
 ///
 /// The final roundtrip waits until the compositor has processed the request,
 /// so this one-shot helper can safely return before its connection is dropped.
-pub fn toggle_show_desktop() -> Result<(), Box<dyn Error>> {
+pub fn toggle_show_desktop(_: u32) -> Result<(), Box<dyn Error>> {
     let connection = Connection::connect_to_env()?;
 
     let mut event_queue = connection.new_event_queue();
@@ -79,7 +71,7 @@ pub fn toggle_show_desktop() -> Result<(), Box<dyn Error>> {
         )
     })?;
 
-    control.toggle_show_desktop();
+    control.toggle_show_desktop(0);
 
     // Ensure the request is sent and processed before this function returns.
     connection.flush()?;
