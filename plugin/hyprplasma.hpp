@@ -14,6 +14,11 @@ void log(Hyprutils::CLI::eLogLevel level, std::format_string<Args...> fmt,
 extern HANDLE g_pluginHandle;
 void init(void);
 void exit(void);
+
+namespace ipc {
+void init();
+void exit();
+} // namespace ipc
 } // namespace hyprplasma
 
 #endif

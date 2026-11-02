@@ -23,6 +23,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_library(${PROJECT_NAME}-plugin SHARED
     plugin/main.cpp
     plugin/hyprplasma.cpp
+    plugin/config.cpp
     plugin/protocols/shell.cpp
     plugin/protocols/virtualdesktop.cpp
     plugin/protocols/windowmanagement.cpp
