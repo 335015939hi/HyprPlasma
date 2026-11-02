@@ -12,3 +12,7 @@ Makefile
 .idea/
 *.swp
 *.user
+
+# Cargo
+/cli/Cargo.lock
+/cli/target/
