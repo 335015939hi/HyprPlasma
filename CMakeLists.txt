@@ -21,11 +21,11 @@ endif()
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 add_library(${PROJECT_NAME} SHARED
-    src/main.cpp
-    src/hyprplasma.cpp
-    src/protocols/shell.cpp
-    src/protocols/virtualdesktop.cpp
-    src/protocols/windowmanagement.cpp
+    plugin/main.cpp
+    plugin/hyprplasma.cpp
+    plugin/protocols/shell.cpp
+    plugin/protocols/virtualdesktop.cpp
+    plugin/protocols/windowmanagement.cpp
 )
 
 # ---------------------------------------------------------------------------
