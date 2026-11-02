@@ -45,4 +45,9 @@ plenty of bugs and non-implemented features. please contribute.
 ### Known bugs
 - **Tooltip flickering:** Seems to be caused by the client repeatedly requesting a resize. Doesn't happen consistently.
 - **Popup resizing:** Resizing popups causes flickering. Pretty consistent. Same cause as issue above.
+
+### Things likely to not work
+- **Spectacle support:** Not implemented
+- **Activities:** Not implemented
+- **Certain Panel behaviors:** Not Implemented
 - **Multi-monitor support:** Not tested. I don't have another monitor. Please buy me one.
