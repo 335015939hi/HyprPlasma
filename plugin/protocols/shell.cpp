@@ -277,6 +277,7 @@ static void surfaceSetRole(wl_client *, wl_resource *resource, uint32_t role) {
   case ORG_KDE_PLASMA_SURFACE_ROLE_NORMAL: //=0
     state->hide_when_showdesktop = false;
     state->should_float = true;
+    state->will_cancel_showdesktop = false;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_DESKTOP: //=1
     state->no_decorations = true;
