@@ -4,9 +4,9 @@
 #include <cctype>
 #include <chrono>
 #include <cmath>
-#include <cstdint>
 #include <config/ConfigManager.hpp>
 #include <config/shared/animation/AnimationTree.hpp>
+#include <cstdint>
 #include <cstdlib>
 #include <debug/log/Logger.hpp>
 #include <desktop/Workspace.hpp>
@@ -526,9 +526,11 @@ static void sendGeometry(WindowWatch *watch, CWindow *window) {
   if (!watch || !window || watch->resources.empty())
     return;
 
-  const bool hasGeometryResource = std::any_of(
-      watch->resources.begin(), watch->resources.end(),
-      [](wl_resource *resource) { return wl_resource_get_version(resource) >= 6; });
+  const bool hasGeometryResource =
+      std::any_of(watch->resources.begin(), watch->resources.end(),
+                  [](wl_resource *resource) {
+                    return wl_resource_get_version(resource) >= 6;
+                  });
   if (!hasGeometryResource)
     return;
 
@@ -1043,7 +1045,7 @@ static void setWindowHiddenWithAnimation(PHLWINDOW window, bool hidden) {
 
   window->setInputBlocked(INPUT_BLOCK_SHOW_DESKTOP, hidden);
 
-  auto& fade = window->alpha(Desktop::View::WINDOW_ALPHA_FADE);
+  auto &fade = window->alpha(Desktop::View::WINDOW_ALPHA_FADE);
   fade->setConfig(Config::animationTree()->getAnimationPropertyConfig(
       hidden ? "fadeOut" : "fadeIn"));
   *fade = hidden ? 0.F : 1.F;
@@ -1284,6 +1286,9 @@ static void handleCompositorTick() {
 namespace hyprplasma {
 namespace proto {
 
+void clear_show_desktop(void) { setShowDesktop(false); }
+void toggle_show_desktop(void) { setShowDesktop(!g_showDesktop); }
+
 void window_management_update_state(Desktop::View::CWindow *window) {
   if (!window)
     return;
@@ -1347,15 +1352,11 @@ void window_management_init(void) {
       });
 
   // These transitions can affect the compositor's effective stacking order.
-  g_listeners.floating =
-      Event::bus()->m_events.window.floating.listen([](PHLWINDOW) {
-        notifyStackingOrderChanged();
-      });
+  g_listeners.floating = Event::bus()->m_events.window.floating.listen(
+      [](PHLWINDOW) { notifyStackingOrderChanged(); });
 
-  g_listeners.fullscreen =
-      Event::bus()->m_events.window.fullscreen.listen([](PHLWINDOW) {
-        notifyStackingOrderChanged();
-      });
+  g_listeners.fullscreen = Event::bus()->m_events.window.fullscreen.listen(
+      [](PHLWINDOW) { notifyStackingOrderChanged(); });
 
   // Only geometry and a low-frequency stacking fallback are polled. Metadata,
   // focus state, and desktop membership are updated by their own events.

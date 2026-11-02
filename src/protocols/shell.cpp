@@ -1,6 +1,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <debug/log/Logger.hpp>
 #include <desktop/DesktopTypes.hpp>
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/desktop/view/WLSurface.hpp>
@@ -39,6 +40,7 @@ struct PlasmaSurfaceState {
   bool no_decorations = false;
   bool skip_taskbar = false;
   bool hide_when_showdesktop = true;
+  bool will_cancel_showdesktop = true;
   bool should_float = false;
   SP<CWLSurfaceResource> hyprSurface;
   PHLMONITORREF monitor;
@@ -117,14 +119,16 @@ static bool updateGeometry(PlasmaSurfaceState *state) {
   return true;
 }
 
-static void openWindowListener(PHLWINDOW window) {
+// returns whether to unshow the desktop
+static bool openWindowListener_real(PHLWINDOW window) {
+  bool cancel_showdesktop = true;
   if (!window || !window->wlSurface())
-    return;
+    return cancel_showdesktop;
 
   auto windowSurface = window->wlSurface()->resource();
 
   if (!windowSurface)
-    return;
+    return cancel_showdesktop;
 
   for (const auto &[_, state] : g_surfaces) {
     if (!state || !state->hyprSurface ||
@@ -159,7 +163,18 @@ static void openWindowListener(PHLWINDOW window) {
       window->m_noInitialFocus = true;
     }
 
+    cancel_showdesktop = state->will_cancel_showdesktop;
+
     break;
+  }
+  return cancel_showdesktop;
+}
+
+static void openWindowListener(PHLWINDOW window) {
+  bool cancel_showdesktop = openWindowListener_real(window);
+  if (cancel_showdesktop) {
+    hyprplasma::log(Log::INFO, "canceling showdesktop");
+    hyprplasma::proto::clear_show_desktop();
   }
 }
 
@@ -259,45 +274,52 @@ static void surfaceSetRole(wl_client *, wl_resource *resource, uint32_t role) {
     return;
   }
   switch (role) {
-  case ORG_KDE_PLASMA_SURFACE_ROLE_NORMAL:
+  case ORG_KDE_PLASMA_SURFACE_ROLE_NORMAL: //=0
     state->hide_when_showdesktop = false;
     state->should_float = true;
     break;
-  case ORG_KDE_PLASMA_SURFACE_ROLE_DESKTOP:
+  case ORG_KDE_PLASMA_SURFACE_ROLE_DESKTOP: //=1
     state->no_decorations = true;
     state->skip_taskbar = true;
     state->hide_when_showdesktop = false;
+    state->will_cancel_showdesktop = false;
     break;
-  case ORG_KDE_PLASMA_SURFACE_ROLE_PANEL:
+  case ORG_KDE_PLASMA_SURFACE_ROLE_PANEL: //=2
     state->no_decorations = true;
     state->hide_when_showdesktop = false;
     state->skip_taskbar = true;
+    state->will_cancel_showdesktop = false;
     state->should_float = true;
     break;
-  case ORG_KDE_PLASMA_SURFACE_ROLE_ONSCREENDISPLAY:
+  case ORG_KDE_PLASMA_SURFACE_ROLE_ONSCREENDISPLAY: //=3
     state->hide_when_showdesktop = false;
     state->skip_taskbar = true;
     state->should_float = true;
+    state->will_cancel_showdesktop = false;
     break;
-  case ORG_KDE_PLASMA_SURFACE_ROLE_NOTIFICATION:
+  case ORG_KDE_PLASMA_SURFACE_ROLE_NOTIFICATION: //=4
     state->skip_taskbar = true;
     state->no_initial_focus = true;
     state->should_float = true;
+    state->will_cancel_showdesktop = false;
     break;
-  case ORG_KDE_PLASMA_SURFACE_ROLE_TOOLTIP:
+  case ORG_KDE_PLASMA_SURFACE_ROLE_TOOLTIP: //=5
     state->hide_when_showdesktop = false;
     state->skip_taskbar = true;
     state->should_float = true;
     state->no_decorations = true;
+    state->will_cancel_showdesktop = false;
     break;
-  case ORG_KDE_PLASMA_SURFACE_ROLE_CRITICALNOTIFICATION:
+  case ORG_KDE_PLASMA_SURFACE_ROLE_CRITICALNOTIFICATION: //=6
     state->hide_when_showdesktop = false;
     state->should_float = true;
     state->skip_taskbar = true;
+    state->will_cancel_showdesktop = false;
     break;
-  case ORG_KDE_PLASMA_SURFACE_ROLE_APPLETPOPUP:
+  case ORG_KDE_PLASMA_SURFACE_ROLE_APPLETPOPUP: //=7
     state->hide_when_showdesktop = false;
     state->should_float = true;
+    state->will_cancel_showdesktop = false;
     break;
   default:
     hyprplasma::log(Log::ERR, "surfaceSetRole: invalid role {}", role);
@@ -432,8 +454,8 @@ static void handleGetSurface(wl_client *client, wl_resource *shellResource,
       if (view) {
         auto window = Desktop::View::CWindow::fromView(view);
         if (window) {
-          // set floating directly. going through the layout manager breaks
-          // things
+          // set floating directly. going through the layout manager
+          // breaks things
           if (state->should_float) {
             window->m_isFloating = true;
           }
