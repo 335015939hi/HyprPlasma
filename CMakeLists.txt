@@ -4,7 +4,7 @@ project(
     hyprplasma
     LANGUAGES CXX C
     VERSION 0.1.0
-    DESCRIPTION "Hyprland plugin template built with CMake"
+    DESCRIPTION "Hyprland plugin implementing KDE Plasma compatibility"
 )
 
 # Hyprland is built with a modern C++ standard. Plugins share C++ objects with
