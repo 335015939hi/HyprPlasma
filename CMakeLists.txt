@@ -131,7 +131,6 @@ add_custom_command(
 )
 
 target_sources(${PROJECT_NAME}-plugin PRIVATE
-    plugin/ipc/wayland.cpp
     "${HYPRPLASMA_CONTROL_HEADER}"
     "${HYPRPLASMA_CONTROL_CODE}"
 )
