@@ -466,21 +466,16 @@ static void handleGetSurface(wl_client *client, wl_resource *shellResource,
           if (xdg && toplevel) {
             const auto geometry = xdg->m_current.geometry;
             const auto &limits = toplevel->m_current;
-            hyprplasma::log(
-                Log::INFO,
-                "Plasma geometry: buffer={}, origin={}, geometry={}, "
-                "min={}, max={}, floating={}",
-                current.size, geometry.pos(), geometry.size(), limits.minSize,
-                limits.maxSize, window->m_isFloating);
+            hyprplasma::log(Log::DEBUG,
+                            "Plasma geometry: size={}, origin={}, geometry={}, "
+                            "min={}, max={}, floating={} role={}",
+                            current.size, geometry.pos(), geometry.size(),
+                            limits.minSize, limits.maxSize,
+                            window->m_isFloating, state->role);
           }
         }
       }
     }
-
-    hyprplasma::log(
-        Log::INFO, "Plasma surface: role={}, mapped={}, size={}x{}, texture={}",
-        state->role, state->hyprSurface->m_mapped, current.size.x,
-        current.size.y, static_cast<bool>(current.texture));
   });
 }
 

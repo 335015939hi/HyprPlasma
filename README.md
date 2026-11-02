@@ -7,7 +7,7 @@ A Hyprland plugin aiming to bring KDE Plasma to Hyprland.
 Before building, make sure you have:
 
 - Hyprland installed with development headers and pkg-config metadata
-- CMake 3.20 or newer
+- CMake 3.22 or newer
 - A C++23-capable compiler
 - A C compiler
 - `wayland-server` development libraries
@@ -35,7 +35,11 @@ cmake --build build
 ```
 ### Load the plugin
 ```bash
-hyprctl plugin load ./build/libhyprplasma.so
+hyprctl plugin load ./build/libhyprplasma-plugin.so
+```
+### Start KDE plasma
+```bash
+plasmashell&disown
 ```
 
 ## Bugs
@@ -45,6 +49,7 @@ plenty of bugs and non-implemented features. please contribute.
 ### Known bugs
 - **Tooltip flickering:** Seems to be caused by the client repeatedly requesting a resize. Doesn't happen consistently.
 - **Popup resizing:** Resizing popups causes flickering. Pretty consistent. Same cause as issue above.
+- **'Edit Mode'** Going into edit mode may or may not work if there are windows in the current workspace
 
 ### Things likely to not work
 - **Spectacle support:** Not implemented

@@ -1089,6 +1089,7 @@ static void setShowDesktop(bool enabled) {
     return;
 
   if (enabled) {
+    hyprplasma::log(Log::INFO, "Showing desktop");
     // Save the focused window before clearing focus.
     g_showDesktopFocusedWindow = Desktop::focusState()->window();
 
@@ -1105,6 +1106,7 @@ static void setShowDesktop(bool enabled) {
       hideWindowForShowDesktop(window);
     }
   } else {
+    hyprplasma::log(Log::INFO, "stopping Showing desktop");
     g_showDesktop = false;
 
     // Restore only the windows this implementation hid. Windows which were
