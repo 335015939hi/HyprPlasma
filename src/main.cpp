@@ -51,7 +51,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO pluginInit(HANDLE handle) {
   return PLUGIN_DESCRIPTION_INFO{
       .name = "hyprplasma",
       .description = "KDE Plasma compatibility for Hyprland",
-      .author = "You",
+      .author = "Tony Zhou",
       .version = "0.1.0",
   };
 }
