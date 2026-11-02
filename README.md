@@ -50,4 +50,5 @@ plenty of bugs and non-implemented features. please contribute.
 - **Spectacle support:** Not implemented
 - **Activities:** Not implemented
 - **Certain Panel behaviors:** Not Implemented
+- **Splash Screen:** Not implemented
 - **Multi-monitor support:** Not tested. I don't have another monitor. Please buy me one.
