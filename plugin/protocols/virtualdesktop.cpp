@@ -2,6 +2,7 @@
 #include <Compositor.hpp>
 #include <algorithm>
 #include <cstdint>
+#include <debug/log/Logger.hpp>
 #include <desktop/Workspace.hpp>
 #include <desktop/state/FocusState.hpp>
 #include <event/EventBus.hpp>
@@ -18,8 +19,10 @@
 
 #include "plasma-virtual-desktop-server-protocol.h"
 
+#include "../config.hpp"
 #include "../hyprplasma.hpp"
 #include "virtualdesktop.hpp"
+#include "windowmanagement.hpp"
 
 struct WorkspaceWatch {
   PHLWORKSPACEREF workspace;
@@ -327,6 +330,12 @@ static void attachDesktopListeners(VirtualDesktopState *state) {
     auto workspace = state->workspace.lock();
     if (!workspace || !state->resource)
       return;
+
+    // workspaced changed. cancel show desktop if the option is set
+    if (hyprplasma::config::g_config.cancel_showdesktop_on_workspaceswitch
+            .get()) {
+      hyprplasma::proto::clear_show_desktop();
+    }
 
     if (workspace->m_visible) {
       org_kde_plasma_virtual_desktop_send_activated(state->resource);
