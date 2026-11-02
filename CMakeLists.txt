@@ -24,6 +24,7 @@ add_library(${PROJECT_NAME}-plugin SHARED
     plugin/main.cpp
     plugin/hyprplasma.cpp
     plugin/config.cpp
+    plugin/lua.cpp
     plugin/protocols/shell.cpp
     plugin/protocols/virtualdesktop.cpp
     plugin/protocols/windowmanagement.cpp
