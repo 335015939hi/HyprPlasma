@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="hyprplasma_control">
+
+  <interface name="hyprplasma_control_v1" version="1">
+    <description summary="HyprPlasma compositor controls">
+      A small control interface exposed by the HyprPlasma plugin.
+    </description>
+
+    <request name="toggle_show_desktop">
+      <description summary="Toggle the compositor's show-desktop state">
+        Instruct the HyprPlasma plugin to toggle show-desktop.
+      </description>
+    </request>
+  </interface>
+
+</protocol>
