@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.22)
 
 project(
     hyprplasma
@@ -14,13 +14,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Release)
+  set(CMAKE_BUILD_TYPE Release)
 endif()
 
 # Plugins are shared objects loaded into the Hyprland process.
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-add_library(${PROJECT_NAME} SHARED
+add_library(${PROJECT_NAME}-plugin SHARED
     plugin/main.cpp
     plugin/hyprplasma.cpp
     plugin/protocols/shell.cpp
@@ -66,21 +66,21 @@ set(PLASMA_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${PLASMA_GENERATED_DIR}")
 
 foreach(protocol IN LISTS PLASMA_PROTOCOLS)
-    set(xml
+  set(xml
         "${PLASMA_WAYLAND_PROTOCOLS_DIR}/${protocol}.xml"
     )
-    set(header
+  set(header
         "${PLASMA_GENERATED_DIR}/${protocol}-server-protocol.h"
     )
-    set(code
+  set(code
         "${PLASMA_GENERATED_DIR}/${protocol}-protocol.c"
     )
 
-    if(NOT EXISTS "${xml}")
-        message(FATAL_ERROR "Protocol XML not found: ${xml}")
-    endif()
+  if(NOT EXISTS "${xml}")
+    message(FATAL_ERROR "Protocol XML not found: ${xml}")
+  endif()
 
-    add_custom_command(
+  add_custom_command(
         OUTPUT "${header}" "${code}"
 
         COMMAND "${WAYLAND_SCANNER}"
@@ -93,17 +93,17 @@ foreach(protocol IN LISTS PLASMA_PROTOCOLS)
         VERBATIM
     )
 
-    target_sources(${PROJECT_NAME} PRIVATE
+  target_sources(${PROJECT_NAME}-plugin PRIVATE
         "${header}"
         "${code}"
     )
 endforeach()
 
-target_include_directories(${PROJECT_NAME} PRIVATE
+target_include_directories(${PROJECT_NAME}-plugin PRIVATE
     "${PLASMA_GENERATED_DIR}"
 )
 
-target_link_libraries(${PROJECT_NAME} PRIVATE
+target_link_libraries(${PROJECT_NAME}-plugin PRIVATE
     PkgConfig::WAYLAND_SERVER
 )
 
@@ -111,19 +111,19 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 # Plugin target
 # ---------------------------------------------------------------------------
 
-target_compile_options(${PROJECT_NAME} PRIVATE
+target_compile_options(${PROJECT_NAME}-plugin PRIVATE
     -Wall -Wextra -Wpedantic
 )
 
 # Headers and helper libraries (hyprlang, hyprutils, wayland-server, xkbcommon, …)
-target_link_libraries(${PROJECT_NAME} PRIVATE
+target_link_libraries(${PROJECT_NAME}-plugin PRIVATE
   PkgConfig::HYPRLAND
 )
 
 # Export the plugin entry-point symbols so Hyprland can dlsym() them.
 # APICALL / EXPORT in PluginAPI.hpp already mark these default-visibility,
 # but we make sure no visibility flags hide them.
-set_target_properties(${PROJECT_NAME} PROPERTIES
+set_target_properties(${PROJECT_NAME}-plugin PROPERTIES
     CXX_VISIBILITY_PRESET default
     VISIBILITY_INLINES_HIDDEN OFF
 )
@@ -133,8 +133,33 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 # ---------------------------------------------------------------------------
 # Install into a plugins directory. The plugin can be loaded from any path with
 # `hyprctl plugin load /absolute/path/to/${PROJECT_NAME}.so`.
-install(TARGETS ${PROJECT_NAME}
+install(TARGETS ${PROJECT_NAME}-plugin
     ARCHIVE DESTINATION lib/hyprland/plugins
     LIBRARY DESTINATION lib/hyprland/plugins
     RUNTIME DESTINATION bin
+)
+
+# ------------------------------
+# the helper binary, using corrosion
+# ------------------------------
+
+include(FetchContent)
+
+FetchContent_Declare(
+    Corrosion
+    GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
+    GIT_SHALLOW TRUE
+)
+
+FetchContent_MakeAvailable(Corrosion)
+
+# Keep Cargo's intermediate build files inside the CMake build directory.
+set(CORROSION_CARGO_TARGET_DIR "${CMAKE_BINARY_DIR}/cargo")
+
+# Import the Rust daemon as a CMake target.
+corrosion_import_crate(
+    MANIFEST_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cli/Cargo.toml"
+    CRATES ${PROJECT_NAME}
+    CRATE_TYPES bin
+    LOCKED
 )
