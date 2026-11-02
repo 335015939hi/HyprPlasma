@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+anyhow = "1.0.104"
+clap = { version = "4.6.7", features = ["derive"] }
 wayland-backend = "0.3.17"
 wayland-client = "0.31"
 wayland-scanner = "0.31"

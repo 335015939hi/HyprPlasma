@@ -3,9 +3,9 @@
 //! This file deliberately contains no daemon loop or session functionality.
 //! It only discovers the plugin's global and sends its one request.
 
+use anyhow::Result;
 use std::error::Error;
 use std::io;
-
 use wayland_client::protocol::wl_registry;
 use wayland_client::{Connection, Dispatch, Proxy, QueueHandle};
 
@@ -50,7 +50,7 @@ wayland_client::delegate_noop!(
 ///
 /// The final roundtrip waits until the compositor has processed the request,
 /// so this one-shot helper can safely return before its connection is dropped.
-pub fn toggle_show_desktop(_: u32) -> Result<(), Box<dyn Error>> {
+pub fn toggle_show_desktop(_: u32) -> Result<()> {
     let connection = Connection::connect_to_env()?;
 
     let mut event_queue = connection.new_event_queue();
