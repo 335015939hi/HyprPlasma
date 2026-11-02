@@ -1,6 +1,6 @@
 # HyprPlasma
 
-A Hyprland plugin aiming to bring KDE Plasma Hyprland.
+A Hyprland plugin aiming to bring KDE Plasma to Hyprland.
 
 ## Requirements
 
