@@ -1,8 +1,35 @@
+
+#include <config/values/types/IValue.hpp>
+#include <hyprland/src/config/values/types/BoolValue.hpp>
+#include <hyprland/src/config/values/types/FloatValue.hpp>
+#include <hyprland/src/config/values/types/IntValue.hpp>
+#include <hyprland/src/config/values/types/StringValue.hpp>
+#include <hyprland/src/plugins/PluginAPI.hpp>
+#include <hyprutils/memory/SharedPtr.hpp>
+
 #include "config.hpp"
+#include "hyprplasma.hpp"
+
+#define CONFIG_PREFIX "plugin:hyprplasma:"
 
 namespace hyprplasma {
 namespace config {
-void init() {}
+SPluginConfig g_config = {};
+void init() {
+  g_config.logout_command = makeShared<Config::Values::CStringValue>(
+      CONFIG_PREFIX "logout_command", "Command to run on logout", "");
+
+  const SP<Config::Values::IValue> configs[] = {
+      Hyprutils::Memory::dynamicPointerCast<Config::Values::IValue>(
+          g_config.logout_command)};
+
+  for (auto config : configs) {
+    if (!HyprlandAPI::addConfigValueV2(hyprplasma::g_pluginHandle, config)) {
+      hyprplasma::log(Log::ERR, "failed to add config value {}",
+                      config->name());
+    }
+  }
+}
 void exit() {}
 } // namespace config
 } // namespace hyprplasma
