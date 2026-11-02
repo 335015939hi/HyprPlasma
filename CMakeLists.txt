@@ -162,5 +162,4 @@ corrosion_import_crate(
     MANIFEST_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cli/Cargo.toml"
     CRATES ${PROJECT_NAME}
     CRATE_TYPES bin
-    LOCKED
 )
