@@ -10,42 +10,42 @@ Before building, make sure you have:
 - CMake 3.22 or newer
 - A C++23-capable compiler
 - A C compiler
-- \`wayland-server\` development libraries
-- \`Plasma Wayland protocols\` installed
-- \`wayland-scanner\` available in \`PATH\`
+- `wayland-server` development libraries
+- `Plasma Wayland protocols` installed
+- `wayland-scanner` available in `PATH`
 
 ## Protocol support
 
-- \`org_kde_kwin_idle\`: implements KDE's idle-time notifications, including per-timeout \`idle\` and \`resumed\` events. Pointer, keyboard, touch, tablet, and gesture input reset the timers.
+- `org_kde_kwin_idle`: implements KDE's idle-time notifications, including per-timeout `idle` and `resumed` events. Pointer, keyboard, touch, tablet, and gesture input reset the timers.
 
 ## Installation
 
 Please don't blindly copy and paste. 
 
 ### Clone the repo
-\`\`\`bash
+```bash
 git clone https://github.com/335015939hi/HyprPlasma.git
 cd HyprPlasma
-\`\`\`
+```
 ### Copy hyprland config
-\`\`\`bash
+```bash
 cp hyprplasma.lua ~/.config/hypr
 echo 'require("hyprplasma")' >>~/.config/hypr/hyprland.lua
-\`\`\`
+```
 You may want to read through the config. 
 ### Build the plugin
-\`\`\`bash
+```bash
 cmake -B build -S .
 cmake --build build
-\`\`\`
+```
 ### Load the plugin
-\`\`\`bash
+```bash
 hyprctl plugin load ./build/libhyprplasma-plugin.so
-\`\`\`
+```
 ### Start KDE plasma
-\`\`\`bash
+```bash
 plasmashell&disown
-\`\`\`
+```
 
 ## Configuration
 see hyprplasma.lua
