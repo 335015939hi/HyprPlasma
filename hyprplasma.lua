@@ -1,6 +1,6 @@
 local home = os.getenv("HOME")
 
--- KDE / Qt integration
+-- environment variables
 hl.env("QT_QPA_PLATFORMTHEME", "kde", true)
 hl.env("QT_QPA_PLATFORM", "wayland", true)
 hl.env("XDG_CONFIG_DIRS", home .. "/.config/kdedefaults:/etc/xdg:/usr/share/desktop-base/kf5-settings", true)
@@ -33,6 +33,8 @@ hl.exec_cmd(
 		.. "PAM_KWALLET5_LOGIN "
 )
 
+-- a simple wrapper that starts services
+-- it will notify if a service fails to start
 local function systemd_service(service)
 	local cmd = "sleep 0.5;systemctl --user start "
 		.. service
@@ -43,7 +45,9 @@ local function systemd_service(service)
 end
 
 hl.on("hyprland.start", function()
+	-- KWallet
 	hl.exec_cmd("exec kwalletd6")
+	--the hyprplasma daemon. source located in cli/
 	hl.exec_cmd("exec hyprplasma daemon || notify-send -a hyprland 'hyprplasma daemon failed'")
 
 	-- various KDE services
