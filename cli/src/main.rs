@@ -1,7 +1,9 @@
 use anyhow::Result;
 use clap::Parser;
 use clap::Subcommand;
+use std::sync::OnceLock;
 
+mod config;
 mod daemon;
 
 #[derive(Parser)]
@@ -17,8 +19,11 @@ enum Commands {
     Daemon,
 }
 
+pub static CONFIG: OnceLock<config::Config> = OnceLock::new();
+
 fn main() -> Result<()> {
     let args = Args::parse();
+    CONFIG.set(config::load_config()?).unwrap();
     match args.command {
         Commands::Daemon => {
             daemon::daemon()?;
