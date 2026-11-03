@@ -28,6 +28,7 @@ cd HyprPlasma
 cp hyprplasma.lua ~/.config/hypr
 echo 'require("hyprplasma")' >>~/.config/hypr/hyprland.lua
 ```
+You may want to read through the config. 
 ### Build the plugin
 ```bash
 cmake -B build -S .
