@@ -209,7 +209,7 @@ void plasma_idle_init(void) {
   // Use compositor input events, not focus changes or IPC polling: pointer,
   // keyboard, touch, tablet and gesture input all count as user activity.
   const auto activity = [](auto &&...) { notifyActivity(); };
-  auto *events = Event::bus();
+  auto &events = Event::bus();
 
   g_listeners.mouseMove = events->m_events.input.mouse.move.listen(activity);
   g_listeners.mouseButton =
