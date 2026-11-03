@@ -42,6 +42,10 @@ hyprctl plugin load ./build/libhyprplasma-plugin.so
 plasmashell&disown
 ```
 
+## Configuration
+see hyprplasma.lua
+
+
 ## Bugs
 
 plenty of bugs and non-implemented features. please contribute. 
