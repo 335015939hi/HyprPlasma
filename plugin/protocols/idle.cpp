@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <limits>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -21,7 +22,8 @@ namespace {
 
 class CIdleTimeout {
 public:
-  CIdleTimeout(wl_resource *resource, uint32_t timeoutMs)
+  CIdleTimeout(wl_resource *resource, uint32_t timeoutMs,
+               uint32_t elapsedMs)
       : m_resource(resource), m_timeoutMs(timeoutMs) {
     m_timer = makeShared<CEventLoopTimer>(
         std::nullopt,
@@ -35,7 +37,7 @@ public:
         nullptr);
 
     g_pEventLoopManager->addTimer(m_timer);
-    reset();
+    update(elapsedMs);
   }
 
   ~CIdleTimeout() {
@@ -43,19 +45,30 @@ public:
       g_pEventLoopManager->removeTimer(m_timer);
   }
 
-  void reset() {
+  void reset() { update(0); }
+
+private:
+  void update(uint32_t elapsedMs) {
     if (!m_resource || !m_timer)
       return;
 
-    if (m_idle) {
-      m_idle = false;
-      org_kde_kwin_idle_timeout_send_resumed(m_resource);
-    }
+    m_timer->updateTimeout(std::nullopt);
 
-    m_timer->updateTimeout(std::chrono::milliseconds(m_timeoutMs));
+    if (elapsedMs < m_timeoutMs) {
+      if (m_idle) {
+        m_idle = false;
+        org_kde_kwin_idle_timeout_send_resumed(m_resource);
+      }
+
+      m_timer->updateTimeout(
+          std::chrono::milliseconds(m_timeoutMs - elapsedMs));
+    } else if (!m_idle) {
+      m_idle = true;
+      org_kde_kwin_idle_timeout_send_idle(m_resource);
+    }
   }
 
-private:
+
   wl_resource *m_resource = nullptr;
   uint32_t m_timeoutMs = 0;
   bool m_idle = false;
@@ -66,6 +79,17 @@ static std::unordered_map<wl_resource *, std::unique_ptr<CIdleTimeout>>
     g_timeouts;
 static std::unordered_set<wl_resource *> g_managerResources;
 static wl_global *g_idleGlobal = nullptr;
+static std::chrono::steady_clock::time_point g_lastActivity =
+    std::chrono::steady_clock::now();
+
+uint32_t elapsedIdleMs() {
+  const auto elapsed =
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::steady_clock::now() - g_lastActivity)
+          .count();
+  return static_cast<uint32_t>(std::min<int64_t>(
+      elapsed, std::numeric_limits<uint32_t>::max()));
+}
 
 struct {
   CHyprSignalListener mouseMove;
@@ -89,6 +113,8 @@ struct {
 } g_listeners;
 
 void notifyActivity() {
+  g_lastActivity = std::chrono::steady_clock::now();
+
   for (const auto &[_, timeout] : g_timeouts) {
     if (timeout)
       timeout->reset();
@@ -134,7 +160,8 @@ void getIdleTimeout(wl_client *client, wl_resource *managerResource,
   }
 
   try {
-    auto timeout = std::make_unique<CIdleTimeout>(resource, timeoutMs);
+    auto timeout = std::make_unique<CIdleTimeout>(
+        resource, timeoutMs, elapsedIdleMs());
     auto *timeoutPtr = timeout.get();
 
     g_timeouts.emplace(resource, std::move(timeout));
@@ -205,6 +232,8 @@ void plasma_idle_init(void) {
     plasma_idle_exit();
     return;
   }
+
+  g_lastActivity = std::chrono::steady_clock::now();
 
   // Use compositor input events, not focus changes or IPC polling: pointer,
   // keyboard, touch, tablet and gesture input all count as user activity.
