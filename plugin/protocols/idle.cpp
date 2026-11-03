@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <limits>
 #include <unordered_map>
@@ -10,6 +11,7 @@
 #include <vector>
 #include <wayland-server-core.h>
 
+#include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/helpers/memory/Memory.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
@@ -146,6 +148,7 @@ void managerResourceDestroyed(wl_resource *resource) {
 
 void getIdleTimeout(wl_client *client, wl_resource *managerResource,
                     uint32_t id, wl_resource *seat, uint32_t timeoutMs) {
+  (void)managerResource;
   // Hyprland currently exposes a single Wayland seat. The protocol's typed
   // wl_seat argument is therefore sufficient; all of its timeout objects
   // observe activity on that seat.
@@ -237,7 +240,9 @@ void plasma_idle_init(void) {
 
   // Use compositor input events, not focus changes or IPC polling: pointer,
   // keyboard, touch, tablet and gesture input all count as user activity.
-  const auto activity = [](auto &&...) { notifyActivity(); };
+  // Select CSignalT::listen(std::function<void()>) explicitly. A generic
+  // lambda is ambiguous with the event-argument overload in Hyprutils.
+  const std::function<void()> activity = [] { notifyActivity(); };
   auto &events = Event::bus();
 
   g_listeners.mouseMove = events->m_events.input.mouse.move.listen(activity);
