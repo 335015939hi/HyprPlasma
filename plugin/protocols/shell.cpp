@@ -284,6 +284,7 @@ static void surfaceSetRole(wl_client *, wl_resource *resource, uint32_t role) {
     state->skip_taskbar = true;
     state->hide_when_showdesktop = false;
     state->will_cancel_showdesktop = false;
+    state->no_initial_focus = true;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_PANEL: //=2
     state->no_decorations = true;
@@ -291,12 +292,14 @@ static void surfaceSetRole(wl_client *, wl_resource *resource, uint32_t role) {
     state->skip_taskbar = true;
     state->will_cancel_showdesktop = false;
     state->should_float = true;
+    state->no_initial_focus = true;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_ONSCREENDISPLAY: //=3
     state->hide_when_showdesktop = false;
     state->skip_taskbar = true;
     state->should_float = true;
     state->will_cancel_showdesktop = false;
+    state->no_initial_focus = true;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_NOTIFICATION: //=4
     state->skip_taskbar = true;
@@ -310,16 +313,19 @@ static void surfaceSetRole(wl_client *, wl_resource *resource, uint32_t role) {
     state->should_float = true;
     state->no_decorations = true;
     state->will_cancel_showdesktop = false;
+    state->no_initial_focus = true;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_CRITICALNOTIFICATION: //=6
     state->hide_when_showdesktop = false;
     state->should_float = true;
     state->skip_taskbar = true;
     state->will_cancel_showdesktop = false;
+    state->no_initial_focus = true;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_APPLETPOPUP: //=7
     state->hide_when_showdesktop = false;
     state->should_float = true;
+    state->no_initial_focus = true;
     state->will_cancel_showdesktop = false;
     break;
   default:

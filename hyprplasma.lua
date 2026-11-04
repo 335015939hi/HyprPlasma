@@ -12,7 +12,7 @@ hl.env(
 hl.env("XKB_DEFAULT_LAYOUT", "us", true)
 hl.env("XKB_DEFAULT_MODEL", "pc105", true)
 hl.env("XDG_BACKEND", "wayland", true)
-hl.env("XDG_CURRENT_DESKTOP", "KDE", true)
+--hl.env("XDG_CURRENT_DESKTOP", "KDE", true)
 hl.env("XDG_SESSION_TYPE", "wayland", true)
 hl.env("XDG_SESSION_DESKTOP", "KDE", true)
 hl.env("DESKTOP_SESSION", "plasma", true)
@@ -23,6 +23,7 @@ hl.env("KGLOBALACCELD_PLATFORM", "org.kde.kwin", true)
 
 hl.exec_cmd(
 	"dbus-update-activation-environment --systemd "
+		.. "DISPLAY "
 		.. "XDG_SESSION_ID XDG_SESSION_PATH XDG_CURRENT_DESKTOP "
 		.. "XDG_CONFIG_DIRS XDG_DATA_DIRS XDG_BACKEND XDG_SESSION_TYPE"
 		.. "XDG_SESSION_PATH XDG_SESSION_ID XDG_VTNR XDG_SEAT XDG_SEAT_PATH "
@@ -36,7 +37,7 @@ hl.exec_cmd(
 -- a simple wrapper that starts services
 -- it will notify if a service fails to start
 local function systemd_service(service)
-	local cmd = "sleep 0.5;systemctl --user start "
+	local cmd = "sleep 1;systemctl --user start "
 		.. service
 		.. " || notify-send -a hyprland 'failed to start service "
 		.. service
