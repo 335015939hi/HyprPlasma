@@ -1,4 +1,3 @@
-
 #include <config/values/types/IValue.hpp>
 #include <hyprland/src/config/values/types/BoolValue.hpp>
 #include <hyprland/src/config/values/types/FloatValue.hpp>
@@ -15,17 +14,18 @@
 namespace hyprplasma {
 namespace config {
 SPluginConfig g_config = {};
+
 void init() {
   g_config.logout_command = makeShared<Config::Values::CStringValue>(
       CONFIG_PREFIX "logout_command", "Command to run on logout", "");
 
-  g_config.reboot_command = makeShared<Config::Values::CStringValue>(
+  g_config.lock_command = makeShared<Config::Values::CStringValue>(
       CONFIG_PREFIX "lock_command", "Command to run on lock screen", "");
 
-  g_config.shutdown_command = makeShared<Config::Values::CStringValue>(
+  g_config.reboot_command = makeShared<Config::Values::CStringValue>(
       CONFIG_PREFIX "reboot_command", "Command to run on reboot", "");
 
-  g_config.lock_command = makeShared<Config::Values::CStringValue>(
+  g_config.shutdown_command = makeShared<Config::Values::CStringValue>(
       CONFIG_PREFIX "shutdown_command", "Command to run on shutdown", "");
 
   g_config.cancel_showdesktop_on_workspaceswitch =
@@ -46,10 +46,10 @@ void init() {
           g_config.cancel_showdesktop_on_workspaceswitch),
   };
 
-  for (auto config : configs) {
-    if (!config) {
+  for (const auto &config : configs) {
+    if (!config)
       continue;
-    }
+
     if (HyprlandAPI::addConfigValueV2(hyprplasma::g_pluginHandle, config)) {
       hyprplasma::log(Log::INFO, "added config value {}", config->name());
     } else {
@@ -58,6 +58,7 @@ void init() {
     }
   }
 }
+
 void exit() {}
 } // namespace config
 } // namespace hyprplasma
