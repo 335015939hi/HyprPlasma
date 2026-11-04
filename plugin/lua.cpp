@@ -11,8 +11,8 @@
 #include <plugins/PluginAPI.hpp>
 
 extern "C" {
-#include <lua.h>
 #include <lauxlib.h>
+#include <lua.h>
 }
 
 #define LUA_FUNCTION_NAMESPACE "hyprplasma"
@@ -97,16 +97,15 @@ static int idle_simulate_activity(lua_State *) {
 static int idle_set_inhibited(lua_State *L) {
   luaL_checktype(L, 1, LUA_TBOOLEAN);
   const bool inhibited = lua_toboolean(L, 1) != 0;
-  lua_pushboolean(
-      L, hyprplasma::proto::plasma_idle_set_manual_inhibit(inhibited));
+  lua_pushboolean(L,
+                  hyprplasma::proto::plasma_idle_set_manual_inhibit(inhibited));
   return 1;
 }
 
 static int idle_add_action(lua_State *L) {
   const auto timeout = luaL_checkinteger(L, 1);
   if (timeout < 0 ||
-      static_cast<uint64_t>(timeout) >
-          std::numeric_limits<uint32_t>::max())
+      static_cast<uint64_t>(timeout) > std::numeric_limits<uint32_t>::max())
     return luaL_error(L, "idle_add_action: timeout must be in [0, 2^32-1] ms");
 
   const char *command = luaL_checkstring(L, 2);
@@ -130,22 +129,20 @@ static int idle_remove_action(lua_State *L) {
   if (id <= 0)
     return luaL_error(L, "idle_remove_action: action id must be positive");
 
-  lua_pushboolean(
-      L, hyprplasma::proto::plasma_idle_remove_action(
-             static_cast<uint64_t>(id)));
+  lua_pushboolean(L, hyprplasma::proto::plasma_idle_remove_action(
+                         static_cast<uint64_t>(id)));
   return 1;
 }
 
 static int idle_clear_actions(lua_State *L) {
-  lua_pushinteger(
-      L, hyprplasma::proto::plasma_idle_clear_actions());
+  lua_pushinteger(L, hyprplasma::proto::plasma_idle_clear_actions());
   return 1;
 }
 
 namespace hyprplasma {
 namespace lua {
 void init() {
-  const LuaFunc lua_funcs[] = {
+  const std::vector<LuaFunc> lua_funcs = {
       {.name = "toggle_show_desktop", .function = toggle_show_desktop},
       {.name = "idle_state", .function = idle_state},
       {.name = "idle_simulate_activity", .function = idle_simulate_activity},
