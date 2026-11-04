@@ -93,7 +93,7 @@ end)
 -- hp.idle_set_inhibited(false)
 ```
 
-The action event only runs commands if a Lua listener is registered. The plugin does not evaluate arbitrary shell commands itself.
+The action event only runs commands if a Lua listener is registered. The plugin does not evaluate arbitrary shell commands itself. If you load the plugin after Hyprland has already parsed your Lua config, reload the config after loading the plugin so the custom event is known to `hl.on`.
 
 ## Installation
 
