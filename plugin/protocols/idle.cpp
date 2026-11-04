@@ -116,7 +116,11 @@ public:
 
   bool isIdle() const { return m_idle; }
   bool isPending() const { return !m_idle && !m_inhibited; }
+  bool isInhibited() const { return m_inhibited; }
   uint32_t timeoutMs() const { return m_timeoutMs; }
+  uint32_t objectId() const {
+    return m_resource ? wl_resource_get_id(m_resource) : 0;
+  }
 
 private:
   void update(uint32_t elapsedMs) {
@@ -197,6 +201,7 @@ public:
 
   bool hasFired() const { return m_fired; }
   bool isPending() const { return !m_fired && !m_inhibited; }
+  bool isInhibited() const { return m_inhibited; }
   uint32_t timeoutMs() const { return m_timeoutMs; }
 
 private:
@@ -388,6 +393,7 @@ void emitState(bool force) {
 }
 
 void notifyActivity() {
+  const bool wasIdle = currentIdleState();
   g_lastActivity = Clock::now();
 
   if (!g_effectiveInhibited) {
@@ -405,7 +411,8 @@ void notifyActivity() {
       action->activity();
   }
 
-  hyprplasma::log(Log::DEBUG, "idle: user activity");
+  if (wasIdle)
+    hyprplasma::log(Log::DEBUG, "idle: user activity resumed the session");
   emitState();
 }
 
@@ -800,7 +807,7 @@ SIdleStatus plasma_idle_status() {
   status.idle = currentIdleState();
   status.inhibited = g_effectiveInhibited;
   status.manualInhibited = g_manualInhibited;
-  status.nativeInhibitors = g_nativeInhibitorCount;
+  status.activeInhibitors = g_nativeInhibitorCount;
   status.timeoutCount = static_cast<uint32_t>(g_timeouts.size());
   status.actionCount = static_cast<uint32_t>(g_actions.size());
   status.idleForMs = elapsedIdleMs();
@@ -814,6 +821,12 @@ SIdleStatus plasma_idle_status() {
       continue;
     if (timeout->isIdle())
       ++idleTimeoutCount;
+    status.timeouts.push_back(SIdleTimeoutStatus{
+        .objectId = timeout->objectId(),
+        .timeoutMs = timeout->timeoutMs(),
+        .idle = timeout->isIdle(),
+        .inhibited = timeout->isInhibited(),
+    });
     if (timeout->isPending() && !g_effectiveInhibited) {
       const auto remaining =
           timeout->timeoutMs() > status.idleForMs
@@ -829,6 +842,12 @@ SIdleStatus plasma_idle_status() {
       continue;
     if (action->hasFired())
       ++firedActionCount;
+    status.actions.push_back(SIdleActionStatus{
+        .id = _,
+        .timeoutMs = action->timeoutMs(),
+        .fired = action->hasFired(),
+        .inhibited = action->isInhibited(),
+    });
     if (action->isPending() && !g_effectiveInhibited) {
       // Actions are reset at activity and inhibition transitions. Their timer
       // uses the same last-activity timestamp as protocol timeout objects.
