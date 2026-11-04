@@ -8,6 +8,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -186,9 +187,8 @@ public:
     m_inhibited = inhibited;
     if (m_inhibited) {
       m_timer->updateTimeout(std::nullopt);
-    } else {
+    } else if (!m_fired) {
       // Start a complete idle interval after the last inhibitor disappears.
-      m_fired = false;
       arm(0);
     }
   }
@@ -370,10 +370,13 @@ void notifyActivity() {
         timeout->reset();
     }
 
-    for (const auto &[_, action] : g_actions) {
-      if (action)
-        action->activity();
-    }
+  }
+
+  // Activity during inhibition still starts a new action cycle. The action
+  // remains paused until inhibition is lifted.
+  for (const auto &[_, action] : g_actions) {
+    if (action)
+      action->activity();
   }
 
   hyprplasma::log(Log::DEBUG, "idle: user activity");
@@ -427,13 +430,12 @@ void onNewNativeInhibitor(SP<CIdleInhibitor> inhibitor) {
       !surface || !Desktop::View::CWLSurface::fromResource(surface);
 
   const auto *key = inhibitor.get();
-  auto [it, inserted] = g_nativeInhibitors.try_emplace(
-      key, SNativeInhibitor{.inhibitor = inhibitor,
-                            .destroy = nullptr,
-                            .nonDesktop = nonDesktop});
+  auto [it, inserted] = g_nativeInhibitors.try_emplace(key);
   if (!inserted)
     return;
 
+  it->second.inhibitor = inhibitor;
+  it->second.nonDesktop = nonDesktop;
   it->second.destroy = resource->m_events.destroy.listen([key] {
     g_nativeInhibitors.erase(key);
     recalculateInhibition();
