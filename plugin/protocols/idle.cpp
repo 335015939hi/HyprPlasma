@@ -41,6 +41,7 @@ static std::unordered_map<uint64_t, std::unique_ptr<CIdleAction>> g_actions;
 static std::unordered_set<wl_resource *> g_managerResources;
 static wl_global *g_idleGlobal = nullptr;
 static SP<Event::CEventBus::CCustomEvent> g_idleEvent;
+static SP<Event::CEventBus::CCustomEvent> g_idleActionEvent;
 
 static Clock::time_point g_lastActivity = Clock::now();
 static uint64_t g_nextActionId = 1;
@@ -205,17 +206,24 @@ private:
     hyprplasma::log(Log::INFO, "idle: running action {} after {} ms",
                     m_id, m_timeoutMs);
 
-    // Use Hyprland's exec dispatcher so the command is launched asynchronously
-    // by the compositor rather than blocking its Wayland event loop.
-    const auto result =
-        HyprlandAPI::invokeHyprctlCommand("dispatch", "exec " + m_command);
-    if (result.starts_with("error") || result.starts_with("Error")) {
-      hyprplasma::log(Log::ERR, "idle: action {} failed: {}", m_id, result);
+    // Emit an action event instead of calling invokeHyprctlCommand here:
+    // that API is synchronous IPC and calling it from the compositor's own
+    // event loop can deadlock. Lua can safely hand the command to hl.exec_cmd.
+    if (g_idleActionEvent) {
+      using Event::CEventBus;
+      const auto actionId = static_cast<int>(std::min<uint64_t>(
+          m_id, static_cast<uint64_t>(std::numeric_limits<int>::max())));
+      const auto result = g_idleActionEvent->emit({actionId, m_command});
+      if (!result)
+        hyprplasma::log(Log::ERR, "idle: action event failed: {}",
+                        result.error());
     } else {
-      hyprplasma::log(Log::DEBUG, "idle: action {} dispatched", m_id);
+      hyprplasma::log(Log::ERR,
+                      "idle: action {} fired but no Lua action event is registered",
+                      m_id);
     }
 
-    emitState();
+    emitState(true);
   }
 
   uint64_t m_id = 0;
@@ -455,7 +463,7 @@ void timeoutResourceDestroyed(wl_resource *resource) {
     return;
 
   g_timeouts.erase(it);
-  emitState();
+  emitState(true);
   hyprplasma::log(Log::DEBUG, "idle: timeout object destroyed");
 }
 
@@ -490,7 +498,7 @@ void getIdleTimeout(wl_client *client, wl_resource *managerResource,
 
     hyprplasma::log(Log::DEBUG, "idle: created timeout {} ms ({} total)",
                     timeoutMs, g_timeouts.size());
-    emitState();
+    emitState(true);
   } catch (const std::bad_alloc &) {
     wl_resource_destroy(resource);
     wl_client_post_no_memory(client);
@@ -576,6 +584,20 @@ void registerIdleLuaEvent() {
     hyprplasma::log(Log::WARN,
                     "idle: could not register plugin.hyprplasma.idle event");
     g_idleEvent.reset();
+  }
+
+  g_idleActionEvent = makeShared<CEventBus::CCustomEvent>(
+      "plugin.hyprplasma.idle_action",
+      std::vector<CEventBus::CCustomEvent::eType>{
+          CEventBus::CCustomEvent::TYPE_INT,    // action id
+          CEventBus::CCustomEvent::TYPE_STRING, // command
+      });
+
+  if (!HyprlandAPI::addEvent(hyprplasma::g_pluginHandle,
+                             g_idleActionEvent)) {
+    hyprplasma::log(Log::WARN,
+                    "idle: could not register plugin.hyprplasma.idle_action event");
+    g_idleActionEvent.reset();
   }
 }
 
@@ -723,6 +745,12 @@ void plasma_idle_exit(void) {
   g_actions.clear();
   g_nativeInhibitors.clear();
 
+  if (g_idleActionEvent) {
+    HyprlandAPI::removeEvent(hyprplasma::g_pluginHandle,
+                             "plugin.hyprplasma.idle_action");
+    g_idleActionEvent.reset();
+  }
+
   if (g_idleEvent) {
     HyprlandAPI::removeEvent(hyprplasma::g_pluginHandle,
                              "plugin.hyprplasma.idle");
@@ -837,7 +865,7 @@ bool plasma_idle_remove_action(uint64_t id) {
   const auto removed = g_actions.erase(id) != 0;
   if (removed) {
     hyprplasma::log(Log::INFO, "idle: removed action {}", id);
-    emitState();
+    emitState(true);
   }
   return removed;
 }
@@ -847,7 +875,7 @@ uint32_t plasma_idle_clear_actions() {
   g_actions.clear();
   if (removed) {
     hyprplasma::log(Log::INFO, "idle: cleared {} action(s)", removed);
-    emitState();
+    emitState(true);
   }
   return removed;
 }
