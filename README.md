@@ -27,7 +27,7 @@ The plugin exposes the following functions under `hl.plugin.hyprplasma`:
 
 | Function | Description |
 |---|---|
-| `idle_state()` | Returns a table with idle, inhibition, timeout, action, and elapsed-time state. |
+| `idle_state()` | Returns aggregate state plus per-timeout and per-action details. |
 | `idle_simulate_activity()` | Simulates user activity and resets managed timers. |
 | `idle_set_inhibited(bool)` | Enables/disables a manual global inhibitor. Native Wayland inhibitors are tracked separately. |
 | `idle_add_action(timeout_ms, command)` | Adds a command to run once after the given idle duration. Returns an action ID. |
@@ -56,6 +56,22 @@ print(("idle=%s inhibited=%s idle_for=%dms"):format(
     tostring(state.inhibited),
     state.idle_for_ms
 ))
+
+-- Per-client KDE timeout objects.
+for _, timeout in ipairs(state.timeouts) do
+    print(("wl object=%d timeout=%dms idle=%s inhibited=%s"):format(
+        timeout.object_id, timeout.timeout_ms,
+        tostring(timeout.idle), tostring(timeout.inhibited)
+    ))
+end
+
+-- Plugin-managed idle actions.
+for _, action in ipairs(state.actions) do
+    print(("action=%d timeout=%dms fired=%s inhibited=%s"):format(
+        action.id, action.timeout_ms,
+        tostring(action.fired), tostring(action.inhibited)
+    ))
+end
 
 -- Run a lock command after five minutes of inactivity.
 local lock_action = hp.idle_add_action(5 * 60 * 1000, "loginctl lock-session")
