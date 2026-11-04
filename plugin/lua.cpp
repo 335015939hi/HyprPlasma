@@ -3,6 +3,7 @@
 #include "protocols/idle.hpp"
 #include "protocols/windowmanagement.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <string>
