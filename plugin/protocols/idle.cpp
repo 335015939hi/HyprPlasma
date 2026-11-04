@@ -18,6 +18,7 @@
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/desktop/state/WindowState.hpp>
 #include <hyprland/src/desktop/view/WLSurface.hpp>
+#include <hyprland/src/desktop/view/types/AlphaModifiable.hpp>
 #include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/helpers/memory/Memory.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
@@ -289,30 +290,51 @@ uint32_t elapsedIdleMs() {
       std::numeric_limits<uint32_t>::max()));
 }
 
-uint32_t activeWindowInhibitors() {
+uint32_t activeManualWindowInhibitors() {
   if (!g_pInputManager)
     return 0;
 
   uint32_t count = 0;
   for (const auto &window : Desktop::windowState()->windows()) {
-    if (window && g_pInputManager->isWindowInhibiting(window, false))
+    if (window && g_pInputManager->isWindowInhibiting(window, true))
       ++count;
   }
   return count;
 }
 
-uint32_t activeNonDesktopInhibitors() {
+uint32_t activeNativeSurfaceInhibitors() {
   uint32_t count = 0;
   for (const auto &[_, entry] : g_nativeInhibitors) {
-    if (entry.nonDesktop && entry.inhibitor &&
-        entry.inhibitor->m_surface.lock())
+    if (!entry.inhibitor)
+      continue;
+
+    const auto surfaceResource = entry.inhibitor->m_surface.lock();
+    if (!surfaceResource)
+      continue;
+
+    const auto surface =
+        Desktop::View::CWLSurface::fromResource(surfaceResource);
+    if (!surface) {
+      // Hyprland treats non-desktop surfaces (e.g. layer surfaces) as visible.
+      ++count;
+      continue;
+    }
+
+    const auto view = surface->view();
+    if (!view)
+      continue;
+
+    const auto alpha =
+        dynamicPointerCast<Desktop::View::IAlphaModifiable>(view);
+    if (view->mapped() && view->acceptsInput() &&
+        (!alpha || alpha->alphaNonZero()))
       ++count;
   }
   return count;
 }
 
 uint32_t currentIdleInhibitorCount() {
-  return activeWindowInhibitors() + activeNonDesktopInhibitors();
+  return activeManualWindowInhibitors() + activeNativeSurfaceInhibitors();
 }
 
 bool currentIdleState() {
