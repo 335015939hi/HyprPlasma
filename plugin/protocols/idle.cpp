@@ -4,6 +4,19 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <hyprland/src/Compositor.hpp>
+#include <hyprland/src/desktop/state/WindowState.hpp>
+#include <hyprland/src/desktop/view/LayerSurface.hpp>
+#include <hyprland/src/desktop/view/WLSurface.hpp>
+#include <hyprland/src/desktop/view/Window.hpp>
+#include <hyprland/src/desktop/view/types/AlphaModifiable.hpp>
+#include <hyprland/src/event/EventBus.hpp>
+#include <hyprland/src/helpers/memory/Memory.hpp>
+#include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
+#include <hyprland/src/managers/eventLoop/EventLoopTimer.hpp>
+#include <hyprland/src/managers/input/InputManager.hpp>
+#include <hyprland/src/plugins/PluginAPI.hpp>
+#include <hyprland/src/protocols/IdleInhibit.hpp>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -15,20 +28,8 @@
 #include <vector>
 #include <wayland-server-core.h>
 
-#include <hyprland/src/Compositor.hpp>
-#include <hyprland/src/desktop/state/WindowState.hpp>
-#include <hyprland/src/desktop/view/WLSurface.hpp>
-#include <hyprland/src/desktop/view/types/AlphaModifiable.hpp>
-#include <hyprland/src/event/EventBus.hpp>
-#include <hyprland/src/helpers/memory/Memory.hpp>
-#include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
-#include <hyprland/src/managers/eventLoop/EventLoopTimer.hpp>
-#include <hyprland/src/managers/input/InputManager.hpp>
-#include <hyprland/src/protocols/IdleInhibit.hpp>
-#include <hyprland/src/plugins/PluginAPI.hpp>
-
-#include "idle-server-protocol.h"
 #include "../hyprplasma.hpp"
+#include "idle-server-protocol.h"
 
 namespace {
 
@@ -61,10 +62,9 @@ void recalculateInhibition();
 
 class CIdleTimeout {
 public:
-  CIdleTimeout(wl_resource *resource, uint32_t timeoutMs,
-               uint32_t elapsedMs, bool inhibited)
-      : m_resource(resource), m_timeoutMs(timeoutMs),
-        m_inhibited(inhibited) {
+  CIdleTimeout(wl_resource *resource, uint32_t timeoutMs, uint32_t elapsedMs,
+               bool inhibited)
+      : m_resource(resource), m_timeoutMs(timeoutMs), m_inhibited(inhibited) {
     m_timer = makeShared<CEventLoopTimer>(
         std::nullopt,
         [this](SP<CEventLoopTimer>, void *) {
@@ -72,8 +72,7 @@ public:
             return;
 
           m_idle = true;
-          hyprplasma::log(Log::DEBUG, "idle: timeout {} ms fired",
-                          m_timeoutMs);
+          hyprplasma::log(Log::DEBUG, "idle: timeout {} ms fired", m_timeoutMs);
           org_kde_kwin_idle_timeout_send_idle(m_resource);
           emitState();
         },
@@ -103,14 +102,12 @@ public:
     m_inhibited = inhibited;
     if (m_inhibited) {
       m_timer->updateTimeout(std::nullopt);
-      hyprplasma::log(Log::DEBUG, "idle: paused timeout {} ms",
-                      m_timeoutMs);
+      hyprplasma::log(Log::DEBUG, "idle: paused timeout {} ms", m_timeoutMs);
     } else {
       // KWin's FollowsInhibitors mode restarts the timer but does not emit
       // resumed merely because inhibition ended. Real input emits resumed.
       m_timer->updateTimeout(std::chrono::milliseconds(m_timeoutMs));
-      hyprplasma::log(Log::DEBUG, "idle: restarted timeout {} ms",
-                      m_timeoutMs);
+      hyprplasma::log(Log::DEBUG, "idle: restarted timeout {} ms", m_timeoutMs);
     }
   }
 
@@ -132,8 +129,7 @@ private:
     if (elapsedMs < m_timeoutMs) {
       if (m_idle) {
         m_idle = false;
-        hyprplasma::log(Log::DEBUG, "idle: resumed timeout {} ms",
-                        m_timeoutMs);
+        hyprplasma::log(Log::DEBUG, "idle: resumed timeout {} ms", m_timeoutMs);
         org_kde_kwin_idle_timeout_send_resumed(m_resource);
         emitState();
       }
@@ -161,8 +157,7 @@ public:
       : m_id(id), m_timeoutMs(timeoutMs), m_command(std::move(command)),
         m_inhibited(g_effectiveInhibited) {
     m_timer = makeShared<CEventLoopTimer>(
-        std::nullopt,
-        [this](SP<CEventLoopTimer>, void *) { fire(); }, nullptr);
+        std::nullopt, [this](SP<CEventLoopTimer>, void *) { fire(); }, nullptr);
     g_pEventLoopManager->addTimer(m_timer);
   }
 
@@ -210,8 +205,8 @@ private:
       return;
 
     m_fired = true;
-    hyprplasma::log(Log::INFO, "idle: running action {} after {} ms",
-                    m_id, m_timeoutMs);
+    hyprplasma::log(Log::INFO, "idle: running action {} after {} ms", m_id,
+                    m_timeoutMs);
 
     // Emit an action event instead of calling invokeHyprctlCommand here:
     // that API is synchronous IPC and calling it from the compositor's own
@@ -225,9 +220,9 @@ private:
         hyprplasma::log(Log::ERR, "idle: action event failed: {}",
                         result.error());
     } else {
-      hyprplasma::log(Log::ERR,
-                      "idle: action {} fired but no Lua action event is registered",
-                      m_id);
+      hyprplasma::log(
+          Log::ERR,
+          "idle: action {} fired but no Lua action event is registered", m_id);
     }
 
     emitState(true);
@@ -277,7 +272,6 @@ struct {
   CHyprSignalListener windowActive;
   CHyprSignalListener windowFullscreen;
   CHyprSignalListener windowUpdateRules;
-  CHyprSignalListener windowUpdateState;
   CHyprSignalListener workspaceActive;
   CHyprSignalListener layerOpened;
   CHyprSignalListener layerClosed;
@@ -286,14 +280,12 @@ struct {
 static SP<CEventLoopTimer> g_inhibitorPollTimer;
 
 uint32_t elapsedIdleMs() {
-  const auto elapsed =
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-          Clock::now() - g_lastActivity)
-          .count();
+  const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                           Clock::now() - g_lastActivity)
+                           .count();
 
   return static_cast<uint32_t>(std::min<int64_t>(
-      std::max<int64_t>(elapsed, 0),
-      std::numeric_limits<uint32_t>::max()));
+      std::max<int64_t>(elapsed, 0), std::numeric_limits<uint32_t>::max()));
 }
 
 uint32_t activeManualWindowInhibitors() {
@@ -333,12 +325,19 @@ uint32_t activeNativeSurfaceInhibitors() {
     if (!view)
       continue;
 
-    const auto alpha =
-        dynamicPointerCast<Desktop::View::IAlphaModifiable>(view);
-    if (view->mapped() && view->acceptsInput() &&
-        (!alpha || alpha->alphaNonZero()))
+    bool mapped = false;
+
+    if (const auto window = dynamicPointerCast<Desktop::View::CWindow>(view)) {
+      mapped = window->m_isMapped;
+    } else if (const auto layer =
+                   dynamicPointerCast<Desktop::View::CLayerSurface>(view)) {
+      mapped = layer->m_mapped;
+    }
+
+    if (mapped)
       ++count;
   }
+
   return count;
 }
 
@@ -401,7 +400,6 @@ void notifyActivity() {
       if (timeout)
         timeout->reset();
     }
-
   }
 
   // Activity during inhibition still starts a new action cycle. The action
@@ -510,14 +508,15 @@ void getIdleTimeout(wl_client *client, wl_resource *managerResource,
                     uint32_t id, wl_resource *seat, uint32_t timeoutMs) {
   if (!seat || wl_resource_get_client(seat) != client ||
       std::string_view(wl_resource_get_class(seat)) != "wl_seat") {
-    wl_resource_post_error(managerResource, 0,
-                           "get_idle_timeout requires a wl_seat from this client");
+    wl_resource_post_error(
+        managerResource, 0,
+        "get_idle_timeout requires a wl_seat from this client");
     return;
   }
 
-  auto *resource = wl_resource_create(
-      client, &org_kde_kwin_idle_timeout_interface,
-      wl_resource_get_version(managerResource), id);
+  auto *resource =
+      wl_resource_create(client, &org_kde_kwin_idle_timeout_interface,
+                         wl_resource_get_version(managerResource), id);
   if (!resource) {
     wl_client_post_no_memory(client);
     return;
@@ -528,8 +527,8 @@ void getIdleTimeout(wl_client *client, wl_resource *managerResource,
         resource, timeoutMs, elapsedIdleMs(), g_effectiveInhibited);
     g_timeouts.emplace(resource, std::move(timeout));
 
-    wl_resource_set_implementation(resource, &s_timeoutImplementation,
-                                   nullptr, timeoutResourceDestroyed);
+    wl_resource_set_implementation(resource, &s_timeoutImplementation, nullptr,
+                                   timeoutResourceDestroyed);
 
     hyprplasma::log(Log::DEBUG, "idle: created timeout {} ms ({} total)",
                     timeoutMs, g_timeouts.size());
@@ -544,15 +543,12 @@ const struct org_kde_kwin_idle_interface s_idleImplementation = {
     .get_idle_timeout = getIdleTimeout,
 };
 
-void bindIdleManager(wl_client *client, void *, uint32_t version,
-                     uint32_t id) {
-  const auto supportedVersion =
-      std::min(version,
-               static_cast<uint32_t>(org_kde_kwin_idle_interface.version));
+void bindIdleManager(wl_client *client, void *, uint32_t version, uint32_t id) {
+  const auto supportedVersion = std::min(
+      version, static_cast<uint32_t>(org_kde_kwin_idle_interface.version));
 
-  auto *resource =
-      wl_resource_create(client, &org_kde_kwin_idle_interface,
-                         static_cast<int>(supportedVersion), id);
+  auto *resource = wl_resource_create(client, &org_kde_kwin_idle_interface,
+                                      static_cast<int>(supportedVersion), id);
   if (!resource) {
     wl_client_post_no_memory(client);
     return;
@@ -592,7 +588,6 @@ void clearListeners() {
   g_listeners.windowActive.reset();
   g_listeners.windowFullscreen.reset();
   g_listeners.windowUpdateRules.reset();
-  g_listeners.windowUpdateState.reset();
   g_listeners.workspaceActive.reset();
   g_listeners.layerOpened.reset();
   g_listeners.layerClosed.reset();
@@ -608,11 +603,11 @@ void registerIdleLuaEvent() {
   g_idleEvent = makeShared<CEventBus::CCustomEvent>(
       "plugin.hyprplasma.idle",
       std::vector<CEventBus::CCustomEvent::eType>{
-          CEventBus::CCustomEvent::TYPE_BOOL,   // idle
-          CEventBus::CCustomEvent::TYPE_BOOL,   // inhibited
-          CEventBus::CCustomEvent::TYPE_INT,    // idle_for_ms
-          CEventBus::CCustomEvent::TYPE_INT,    // active_inhibitor_count
-          CEventBus::CCustomEvent::TYPE_INT,    // timeout_count
+          CEventBus::CCustomEvent::TYPE_BOOL, // idle
+          CEventBus::CCustomEvent::TYPE_BOOL, // inhibited
+          CEventBus::CCustomEvent::TYPE_INT,  // idle_for_ms
+          CEventBus::CCustomEvent::TYPE_INT,  // active_inhibitor_count
+          CEventBus::CCustomEvent::TYPE_INT,  // timeout_count
       });
 
   if (!HyprlandAPI::addEvent(hyprplasma::g_pluginHandle, g_idleEvent)) {
@@ -628,10 +623,10 @@ void registerIdleLuaEvent() {
           CEventBus::CCustomEvent::TYPE_STRING, // command
       });
 
-  if (!HyprlandAPI::addEvent(hyprplasma::g_pluginHandle,
-                             g_idleActionEvent)) {
-    hyprplasma::log(Log::WARN,
-                    "idle: could not register plugin.hyprplasma.idle_action event");
+  if (!HyprlandAPI::addEvent(hyprplasma::g_pluginHandle, g_idleActionEvent)) {
+    hyprplasma::log(
+        Log::WARN,
+        "idle: could not register plugin.hyprplasma.idle_action event");
     g_idleActionEvent.reset();
   }
 }
@@ -702,10 +697,12 @@ void plasma_idle_init(void) {
   g_listeners.tabletProximity =
       events->m_events.input.tablet.proximity.listen(activity);
   g_listeners.tabletTip = events->m_events.input.tablet.tip.listen(activity);
-  g_listeners.touchCancel = events->m_events.input.touch.cancel.listen(activity);
+  g_listeners.touchCancel =
+      events->m_events.input.touch.cancel.listen(activity);
   g_listeners.touchDown = events->m_events.input.touch.down.listen(activity);
   g_listeners.touchUp = events->m_events.input.touch.up.listen(activity);
-  g_listeners.touchMotion = events->m_events.input.touch.motion.listen(activity);
+  g_listeners.touchMotion =
+      events->m_events.input.touch.motion.listen(activity);
   g_listeners.swipeBegin =
       events->m_events.gesture.swipe.begin.listen(activity);
   g_listeners.swipeEnd = events->m_events.gesture.swipe.end.listen(activity);
@@ -729,8 +726,6 @@ void plasma_idle_init(void) {
       events->m_events.window.fullscreen.listen(refreshInhibitors);
   g_listeners.windowUpdateRules =
       events->m_events.window.updateRules.listen(refreshInhibitors);
-  g_listeners.windowUpdateState =
-      events->m_events.window.updateState.listen(refreshInhibitors);
   g_listeners.workspaceActive =
       events->m_events.workspace.active.listen(refreshInhibitors);
   g_listeners.layerOpened =
@@ -772,7 +767,7 @@ void plasma_idle_exit(void) {
   g_timeouts.clear();
 
   std::vector<wl_resource *> managerResources(g_managerResources.begin(),
-                                               g_managerResources.end());
+                                              g_managerResources.end());
   for (auto *resource : managerResources)
     wl_resource_destroy(resource);
   g_managerResources.clear();
@@ -828,12 +823,10 @@ SIdleStatus plasma_idle_status() {
         .inhibited = timeout->isInhibited(),
     });
     if (timeout->isPending() && !g_effectiveInhibited) {
-      const auto remaining =
-          timeout->timeoutMs() > status.idleForMs
-              ? timeout->timeoutMs() - status.idleForMs
-              : 0;
-      nextTimeout =
-          nextTimeout ? std::min(*nextTimeout, remaining) : remaining;
+      const auto remaining = timeout->timeoutMs() > status.idleForMs
+                                 ? timeout->timeoutMs() - status.idleForMs
+                                 : 0;
+      nextTimeout = nextTimeout ? std::min(*nextTimeout, remaining) : remaining;
     }
   }
 
@@ -851,12 +844,10 @@ SIdleStatus plasma_idle_status() {
     if (action->isPending() && !g_effectiveInhibited) {
       // Actions are reset at activity and inhibition transitions. Their timer
       // uses the same last-activity timestamp as protocol timeout objects.
-      const auto remaining =
-          action->timeoutMs() > status.idleForMs
-              ? action->timeoutMs() - status.idleForMs
-              : 0;
-      nextTimeout =
-          nextTimeout ? std::min(*nextTimeout, remaining) : remaining;
+      const auto remaining = action->timeoutMs() > status.idleForMs
+                                 ? action->timeoutMs() - status.idleForMs
+                                 : 0;
+      nextTimeout = nextTimeout ? std::min(*nextTimeout, remaining) : remaining;
     }
   }
 
@@ -892,14 +883,12 @@ uint64_t plasma_idle_add_action(uint32_t timeoutMs,
 
   const auto id = g_nextActionId++;
   try {
-    auto action =
-        std::make_unique<CIdleAction>(id, timeoutMs, command);
+    auto action = std::make_unique<CIdleAction>(id, timeoutMs, command);
     auto *actionPtr = action.get();
     g_actions.emplace(id, std::move(action));
     actionPtr->arm(elapsedIdleMs());
 
-    hyprplasma::log(Log::INFO, "idle: added action {} at {} ms", id,
-                    timeoutMs);
+    hyprplasma::log(Log::INFO, "idle: added action {} at {} ms", id, timeoutMs);
     emitState();
     return id;
   } catch (const std::bad_alloc &) {

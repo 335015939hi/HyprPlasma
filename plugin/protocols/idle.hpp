@@ -45,8 +45,7 @@ void plasma_idle_exit(void);
 SIdleStatus plasma_idle_status();
 void plasma_idle_simulate_activity();
 bool plasma_idle_set_manual_inhibit(bool inhibited);
-uint64_t plasma_idle_add_action(uint32_t timeoutMs,
-                                const std::string &command);
+uint64_t plasma_idle_add_action(uint32_t timeoutMs, const std::string &command);
 bool plasma_idle_remove_action(uint64_t id);
 uint32_t plasma_idle_clear_actions();
 
