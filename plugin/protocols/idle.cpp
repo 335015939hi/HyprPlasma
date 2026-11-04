@@ -106,9 +106,10 @@ public:
       hyprplasma::log(Log::DEBUG, "idle: paused timeout {} ms",
                       m_timeoutMs);
     } else {
-      // KWin's idle detector starts a fresh interval when inhibition ends.
-      update(0);
-      hyprplasma::log(Log::DEBUG, "idle: resumed timeout {} ms",
+      // KWin's FollowsInhibitors mode restarts the timer but does not emit
+      // resumed merely because inhibition ended. Real input emits resumed.
+      m_timer->updateTimeout(std::chrono::milliseconds(m_timeoutMs));
+      hyprplasma::log(Log::DEBUG, "idle: restarted timeout {} ms",
                       m_timeoutMs);
     }
   }
@@ -312,13 +313,16 @@ uint32_t activeNativeSurfaceInhibitors() {
     if (!surfaceResource)
       continue;
 
-    const auto surface =
-        Desktop::View::CWLSurface::fromResource(surfaceResource);
-    if (!surface) {
+    if (entry.nonDesktop) {
       // Hyprland treats non-desktop surfaces (e.g. layer surfaces) as visible.
       ++count;
       continue;
     }
+
+    const auto surface =
+        Desktop::View::CWLSurface::fromResource(surfaceResource);
+    if (!surface)
+      continue;
 
     const auto view = surface->view();
     if (!view)
@@ -449,7 +453,7 @@ void onNewNativeInhibitor(SP<CIdleInhibitor> inhibitor) {
 
   const auto surface = inhibitor->m_surface.lock();
   const bool nonDesktop =
-      !surface || !Desktop::View::CWLSurface::fromResource(surface);
+      surface && !Desktop::View::CWLSurface::fromResource(surface);
 
   const auto *key = inhibitor.get();
   auto [it, inserted] = g_nativeInhibitors.try_emplace(key);
