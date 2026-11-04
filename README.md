@@ -10,38 +10,44 @@ Before building, make sure you have:
 - CMake 3.22 or newer
 - A C++23-capable compiler
 - A C compiler
-- \`wayland-server\` development libraries
-- \`Plasma Wayland protocols\` installed
-- \`wayland-scanner\` available in \`PATH\`
+- `wayland-server` development libraries
+- `Plasma Wayland protocols` installed
+- `wayland-scanner` available in `PATH`
 
 ## Protocol support
 
-- \`org_kde_kwin_idle\`: implements KDE's idle-time notifications, including per-timeout \`idle\` and \`resumed\` events.
-- \`zwp_idle_inhibit_manager_v1\`: provided by Hyprland itself. HyprPlasma observes its inhibitor state and applies it to KDE idle timers. It deliberately does not register a duplicate global.
+- `org_kde_kwin_idle`: implements KDE's idle-time notifications, including per-timeout `idle` and `resumed` events.
+- `zwp_idle_inhibit_manager_v1`: provided by Hyprland itself. HyprPlasma observes its inhibitor state and applies it to KDE idle timers. It deliberately does not register a duplicate global.
 - Input activity: pointer movement/buttons/scroll, keyboard, touch, tablet, and pointer gestures reset idle timers.
 - Idle actions: Lua-configured commands run once per inactivity cycle, pause during inhibition, and re-arm after activity.
 
 ## Idle Lua API
 
-The plugin exposes the following functions under \`hl.plugin.hyprplasma\`:
+The plugin exposes the following functions under `hl.plugin.hyprplasma`:
 
 | Function | Description |
 |---|---|
-| \`idle_state()\` | Returns a table with idle, inhibition, timeout, action, and elapsed-time state. |
-| \`idle_simulate_activity()\` | Simulates user activity and resets managed timers. |
-| \`idle_set_inhibited(bool)\` | Enables/disables a manual global inhibitor. Native Wayland inhibitors are tracked separately. |
-| \`idle_add_action(timeout_ms, command)\` | Adds a command to run once after the given idle duration. Returns an action ID. |
-| \`idle_remove_action(id)\` | Removes an action by ID. |
-| \`idle_clear_actions()\` | Removes all Lua-configured idle actions and returns the number removed. |
+| `idle_state()` | Returns a table with idle, inhibition, timeout, action, and elapsed-time state. |
+| `idle_simulate_activity()` | Simulates user activity and resets managed timers. |
+| `idle_set_inhibited(bool)` | Enables/disables a manual global inhibitor. Native Wayland inhibitors are tracked separately. |
+| `idle_add_action(timeout_ms, command)` | Adds a command to run once after the given idle duration. Returns an action ID. |
+| `idle_remove_action(id)` | Removes an action by ID. |
+| `idle_clear_actions()` | Removes all Lua-configured idle actions and returns the number removed. |
 
-The plugin also emits \`plugin.hyprplasma.idle\` through \`hl.on\` with these arguments:
+The plugin emits two Lua events:
 
-\`idle, inhibited, idle_for_ms, active_inhibitor_count, timeout_count\`
+- `plugin.hyprplasma.idle`: `idle, inhibited, idle_for_ms, active_inhibitor_count, timeout_count`
+- `plugin.hyprplasma.idle_action`: `action_id, command`
 
-For example:
+Idle actions are emitted as events rather than executed through synchronous IPC. Calling Hyprland's synchronous IPC API from inside its own event loop can deadlock. Subscribe to the action event and use `hl.exec_cmd` to dispatch commands:
 
-\`\`\`lua
+```lua
 local hp = hl.plugin.hyprplasma
+
+-- Execute scheduled actions through Hyprland's Lua command executor.
+hl.on("plugin.hyprplasma.idle_action", function(action_id, command)
+    hl.exec_cmd("exec " .. command)
+end)
 
 -- Inspect current state.
 local state = hp.idle_state()
@@ -69,46 +75,47 @@ end)
 -- hp.idle_simulate_activity()
 -- hp.idle_set_inhibited(true)
 -- hp.idle_set_inhibited(false)
-\`\`\`
+```
 
-Idle actions are intentionally simple command dispatchers. For complex workflows, use the \`plugin.hyprplasma.idle\` event and implement the action in Lua. Commands are dispatched through Hyprland's \`exec\` dispatcher and do not block the compositor event loop.
+The action event only runs commands if a Lua listener is registered. The plugin does not evaluate arbitrary shell commands itself.
 
 ## Installation
 
 Please don't blindly copy and paste.
 
 ### Clone the repo
-\`\`\`bash
+```bash
 git clone https://github.com/335015939hi/HyprPlasma.git
 cd HyprPlasma
-\`\`\`
+```
 
 ### Copy Hyprland config
-\`\`\`bash
+```bash
 cp hyprplasma.lua ~/.config/hypr
 echo 'require("hyprplasma")' >>~/.config/hypr/hyprland.lua
-\`\`\`
+```
 
 You may want to read through the config.
 
 ### Build the plugin
-\`\`\`bash
+```bash
 cmake -B build -S .
 cmake --build build
-\`\`\`
+```
 
 ### Load the plugin
-\`\`\`bash
+```bash
 hyprctl plugin load ./build/libhyprplasma-plugin.so
-\`\`\`
+```
 
 ### Start KDE Plasma
-\`\`\`bash
+```bash
 plasmashell&disown
-\`\`\`
+```
 
 ## Configuration
-See \`hyprplasma.lua\`.
+
+See `hyprplasma.lua`.
 
 ## Bugs
 
