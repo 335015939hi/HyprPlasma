@@ -42,12 +42,12 @@ static int toggle_show_desktop(lua_State *_) {
 static int idle_state(lua_State *L) {
   const auto state = hyprplasma::proto::plasma_idle_status();
 
-  lua_createtable(L, 0, 12);
+  lua_createtable(L, 0, 14);
   setBool(L, "available", state.available);
   setBool(L, "idle", state.idle);
   setBool(L, "inhibited", state.inhibited);
   setBool(L, "manual_inhibited", state.manualInhibited);
-  setInteger(L, "native_inhibitors", state.nativeInhibitors);
+  setInteger(L, "active_inhibitors", state.activeInhibitors);
   setInteger(L, "timeout_count", state.timeoutCount);
   setInteger(L, "idle_timeout_count", state.idleTimeoutCount);
   setInteger(L, "action_count", state.actionCount);
@@ -60,6 +60,30 @@ static int idle_state(lua_State *L) {
     lua_pushnil(L);
     lua_setfield(L, -2, "next_timeout_ms");
   }
+
+  lua_createtable(L, static_cast<int>(state.timeouts.size()), 0);
+  for (size_t i = 0; i < state.timeouts.size(); ++i) {
+    const auto &timeout = state.timeouts[i];
+    lua_createtable(L, 0, 4);
+    setInteger(L, "object_id", timeout.objectId);
+    setInteger(L, "timeout_ms", timeout.timeoutMs);
+    setBool(L, "idle", timeout.idle);
+    setBool(L, "inhibited", timeout.inhibited);
+    lua_rawseti(L, -2, static_cast<lua_Integer>(i + 1));
+  }
+  lua_setfield(L, -2, "timeouts");
+
+  lua_createtable(L, static_cast<int>(state.actions.size()), 0);
+  for (size_t i = 0; i < state.actions.size(); ++i) {
+    const auto &action = state.actions[i];
+    lua_createtable(L, 0, 4);
+    setInteger(L, "id", action.id);
+    setInteger(L, "timeout_ms", action.timeoutMs);
+    setBool(L, "fired", action.fired);
+    setBool(L, "inhibited", action.inhibited);
+    lua_rawseti(L, -2, static_cast<lua_Integer>(i + 1));
+  }
+  lua_setfield(L, -2, "actions");
 
   return 1;
 }
