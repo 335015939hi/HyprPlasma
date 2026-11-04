@@ -48,6 +48,10 @@ end
 hl.on("hyprland.start", function()
 	-- KWallet
 	hl.exec_cmd("exec kwalletd6")
+	hl.exec_cmd("sleep 0.3;/usr/share/libpam-kwallet-common/pam_kwallet_init")
+	hl.exec_cmd(
+		"sleep 0.6;busctl --user call org.kde.kwalletd6 /modules/kwalletd6 org.kde.KWallet open sxs kdewallet 0 ''"
+	)
 	--the hyprplasma daemon. source located in cli/
 	hl.exec_cmd("exec hyprplasma daemon || notify-send -a hyprland 'hyprplasma daemon failed'")
 
