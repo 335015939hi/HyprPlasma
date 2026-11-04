@@ -29,6 +29,7 @@ add_library(${PROJECT_NAME}-plugin SHARED
     plugin/config.cpp
     plugin/lua.cpp
     plugin/protocols/shell.cpp
+    plugin/protocols/idle.cpp
     plugin/protocols/virtualdesktop.cpp
     plugin/protocols/windowmanagement.cpp
 )
@@ -63,6 +64,7 @@ set(
   plasma-window-management
   plasma-shell
   plasma-virtual-desktop
+  idle
   # org-kde-plasma-virtual-desktop seems to be the same as plasma-virtual-desktop
 )
 
