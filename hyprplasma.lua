@@ -1,72 +1,64 @@
-local home = os.getenv("HOME")
-
 -- environment variables
-hl.env("QT_QPA_PLATFORMTHEME", "kde", true)
-hl.env("QT_QPA_PLATFORM", "wayland", true)
-hl.env("XDG_CONFIG_DIRS", home .. "/.config/kdedefaults:/etc/xdg:/usr/share/desktop-base/kf5-settings", true)
-hl.env(
-	"XDG_DATA_DIRS",
-	home .. "/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/usr/local/share/:/usr/share/",
-	true
-)
-hl.env("XKB_DEFAULT_LAYOUT", "us", true)
-hl.env("XKB_DEFAULT_MODEL", "pc105", true)
-hl.env("XDG_BACKEND", "wayland", true)
---hl.env("XDG_CURRENT_DESKTOP", "KDE", true)
-hl.env("XDG_SESSION_TYPE", "wayland", true)
-hl.env("XDG_SESSION_DESKTOP", "KDE", true)
-hl.env("DESKTOP_SESSION", "plasma", true)
-hl.env("KDE_APPLICATIONS_AS_SCOPE", "1", true)
-hl.env("KDE_FULL_SESSION", "true", true)
-hl.env("KDE_SESSION_VERSION", "6", true)
-hl.env("KGLOBALACCELD_PLATFORM", "org.kde.kwin", true)
+local function update_env()
+	local home = os.getenv("HOME")
+	hl.env("QT_QPA_PLATFORMTHEME", "kde")
+	hl.env("QT_QPA_PLATFORM", "wayland;xcb")
+	hl.env("GDK_BACKEND", "wayland,x11,*")
+	hl.env("XDG_CONFIG_DIRS", home .. "/.config/kdedefaults:/etc/xdg:/usr/share/desktop-base/kf5-settings")
+	hl.env(
+		"XDG_DATA_DIRS",
+		home .. "/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/usr/local/share/:/usr/share/",
+		true
+	)
+	hl.env("XKB_DEFAULT_LAYOUT", "us")
+	hl.env("XKB_DEFAULT_MODEL", "pc105")
+	hl.env("XDG_BACKEND", "wayland")
+	hl.env("XDG_CURRENT_DESKTOP", "KDE")
+	hl.env("XDG_SESSION_TYPE", "wayland")
+	hl.env("XDG_SESSION_DESKTOP", "KDE")
+	hl.env("DESKTOP_SESSION", "plasma")
+	hl.env("KDE_APPLICATIONS_AS_SCOPE", "1")
+	hl.env("KDE_FULL_SESSION", "true")
+	hl.env("KDE_SESSION_VERSION", "6")
+	hl.env("KGLOBALACCELD_PLATFORM", "org.kde.kwin")
 
-hl.exec_cmd(
-	"dbus-update-activation-environment --systemd "
-		.. "DISPLAY "
-		.. "XDG_SESSION_ID XDG_SESSION_PATH XDG_CURRENT_DESKTOP "
-		.. "XDG_CONFIG_DIRS XDG_DATA_DIRS XDG_BACKEND XDG_SESSION_TYPE"
-		.. "XDG_SESSION_PATH XDG_SESSION_ID XDG_VTNR XDG_SEAT XDG_SEAT_PATH "
-		.. "XKB_DEFAULT_MODEL XKB_DEFAULT_LAYOUT "
-		.. "XDG_SESSION_DESKTOP DESKTOP_SESSION WAYLAND_DISPLAY XDG_CURRENT_DESKTOP "
-		.. "QT_QPA_PLATFORM_THEME QT_QPA_PLATFORM QML2_IMPORT_PATH QML_IMPORT_PATH QT_PLUGIN_PATH "
-		.. "KDE_APPLICATIONS_AS_SCOPE KDE_SESSION_VERSION KDE_FULL_SESSION KGLOBALACCELD_PLATFORM "
-		.. "PAM_KWALLET5_LOGIN "
-)
-
--- a simple wrapper that starts services
--- it will notify if a service fails to start
-local function systemd_service(service)
-	local cmd = "sleep 1;systemctl --user start "
-		.. service
-		.. " || notify-send -a hyprland 'failed to start service "
-		.. service
-		.. "'"
-	hl.exec_cmd(cmd)
+	--os.execute(
+	--	"dbus-update-activation-environment --systemd --all || notify-send -a hyprland 'dbus-update-activation-environment failed'"
+	--)
+	--hl.exec_cmd(
+	--	"dbus-update-activation-environment --systemd "
+	--		.. "DISPLAY "
+	--		.. "XDG_SESSION_ID XDG_SESSION_PATH XDG_CURRENT_DESKTOP "
+	--		.. "XDG_CONFIG_DIRS XDG_DATA_DIRS XDG_BACKEND XDG_SESSION_TYPE"
+	--		.. "XDG_SESSION_PATH XDG_SESSION_ID XDG_VTNR XDG_SEAT XDG_SEAT_PATH "
+	--		.. "XKB_DEFAULT_MODEL XKB_DEFAULT_LAYOUT GDK_BACKEND "
+	--		.. "XDG_SESSION_DESKTOP DESKTOP_SESSION WAYLAND_DISPLAY XDG_CURRENT_DESKTOP "
+	--		.. "QT_QPA_PLATFORM_THEME QT_QPA_PLATFORM QML2_IMPORT_PATH QML_IMPORT_PATH QT_PLUGIN_PATH "
+	--		.. "KDE_APPLICATIONS_AS_SCOPE KDE_SESSION_VERSION KDE_FULL_SESSION KGLOBALACCELD_PLATFORM "
+	--		.. "PAM_KWALLET5_LOGIN "
+	--)
 end
 
 hl.on("hyprland.start", function()
+	update_env()
+	--plasmashell.
+	hl.exec_cmd("exec plasmashell")
 	-- KWallet
 	hl.exec_cmd("exec kwalletd6")
-	hl.exec_cmd("sleep 0.3;/usr/share/libpam-kwallet-common/pam_kwallet_init")
 	hl.exec_cmd(
-		"sleep 0.6;busctl --user call org.kde.kwalletd6 /modules/kwalletd6 org.kde.KWallet open sxs kdewallet 0 ''"
+		"sleep 0.5;/usr/share/libpam-kwallet-common/pam_kwallet_init && busctl --user call org.kde.kwalletd6 /modules/kwalletd6 org.kde.KWallet open sxs kdewallet 0 ''"
 	)
 	--the hyprplasma daemon. source located in cli/
 	hl.exec_cmd("exec hyprplasma daemon || notify-send -a hyprland 'hyprplasma daemon failed'")
 
 	-- various KDE services
-	systemd_service("plasma-polkit-agent")
-	systemd_service("plasma-xdg-desktop-portal-kde")
-	systemd_service("plasma-powerdevil")
-	systemd_service("plasma-kcminit-phase1")
-	systemd_service("plasma-kcminit")
-	systemd_service("plasma-gmenudbusmenuproxy")
-	systemd_service("plasma-kded6")
-	systemd_service("plasma-kglobalaccel")
-	systemd_service("plasma-kwallet-pam")
-	--plasmashell.
-	systemd_service("plasma-plasmashell")
+	hl.exec_cmd("exec /usr/lib/x86_64-linux-gnu/libexec/polkit-kde-authentication-agent-1")
+	hl.exec_cmd("exec /usr/lib/x86_64-linux-gnu/libexec/xdg-desktop-portal-kde")
+	hl.exec_cmd("exec /usr/lib/x86_64-linux-gnu/libexec/org_kde_powerdevil")
+	hl.exec_cmd("qdbus org.kde.kcminit /kcminit org.kde.KCMInit.runPhase1 && kcminit_startup")
+	hl.exec_cmd("exec gmenudbusmenuproxy")
+	hl.exec_cmd("exec kded6")
+	hl.exec_cmd("exec /usr/lib/x86_64-linux-gnu/libexec/kglobalacceld")
 end)
 
 if hl.plugin and hl.plugin.hyprplasma then
@@ -80,6 +72,16 @@ if hl.plugin and hl.plugin.hyprplasma then
 		},
 	})
 end
+
+--opening a window on empty workspace may keep focus on the desktop instead of focusing the window. this fixes it
+hl.on("window.open_early", function(w)
+	if not hl.get_active_window() then
+		local no_warps = hl.get_config("cursor:no_warps")
+		hl.config({ ["cursor.no_warps"] = true })
+		hl.dispatch(hl.dsp.focus({ window = w }))
+		hl.config({ ["cursor.no_warps"] = no_warps })
+	end
+end)
 
 --[[
 HyprPlasma Lua API
