@@ -1,6 +1,8 @@
 use anyhow::Result;
 use std::collections::HashMap;
 use std::process::Command;
+use std::sync::Mutex;
+use std::sync::OnceLock;
 use strum::Display;
 use strum::EnumString;
 use strum::VariantNames;
@@ -20,12 +22,14 @@ pub enum ConfigKeys {
 }
 
 #[derive(Debug)]
-pub struct Config {
+struct Config {
     map: HashMap<ConfigKeys, String>,
 }
 
+static CONFIG: OnceLock<Mutex<Config>> = OnceLock::new();
+
 impl Config {
-    pub fn get_raw(&self, key: ConfigKeys) -> &str {
+    fn get_raw(&self, key: ConfigKeys) -> &str {
         let val = self.map.get(&key);
         match val {
             Some(val) => val.as_str(),
@@ -39,7 +43,7 @@ impl Config {
             }
         }
     }
-    pub fn get_as_str(&self, key: ConfigKeys) -> &str {
+    fn get_as_str(&self, key: ConfigKeys) -> &str {
         let val = self.map.get(&key);
         match val {
             Some(val) => {
@@ -59,49 +63,70 @@ impl Config {
             }
         }
     }
-}
 
-pub fn load_config() -> Result<Config> {
-    let mut config: HashMap<ConfigKeys, String> = HashMap::new();
-    for key in ConfigKeys::VARIANTS {
-        let hyprkey = format!("plugin.hyprplasma.{key}");
-        println!("{key}");
-        let output = Command::new("hyprctl")
-            .arg("getoption")
-            .arg(&hyprkey)
-            .output()?;
-        if !output.status.success() {
-            let _ = Command::new("notify-send")
-                .arg("-a")
-                .arg("hyprplasma daemon")
-                .arg(format!(
-                    "hyprctl getoption {hyprkey} failed:{}",
-                    output.status
-                ))
-                .spawn()?;
-        }
-        let mut value = String::new();
-        let output_str = String::from_utf8_lossy(&output.stdout);
-        let mut output: Vec<&str> = output_str.lines().collect();
-        if output.len() < 2 {
-            //hyprctl should print 'no such option' for non-existing options (one line). therefore
-            //if there are less than 2 lines something went wrong.
-            let _ = Command::new("notify-send")
-                .arg("-a")
-                .arg("hyprplasma daemon")
-                .arg(format!("hyprctl getoption {hyprkey} failed:{}", output_str))
-                .spawn()?;
-        }
-        output.pop();
-        for line in output {
-            if value.len() > 0 {
-                value += "\n";
+    fn reload(&mut self) -> Result<()> {
+        let mut config: HashMap<ConfigKeys, String> = HashMap::new();
+        for key in ConfigKeys::VARIANTS {
+            let hyprkey = format!("plugin.hyprplasma.{key}");
+            println!("{key}");
+            let output = Command::new("hyprctl")
+                .arg("getoption")
+                .arg(&hyprkey)
+                .output()?;
+            if !output.status.success() {
+                let _ = Command::new("notify-send")
+                    .arg("-a")
+                    .arg("hyprplasma daemon")
+                    .arg(format!(
+                        "hyprctl getoption {hyprkey} failed:{}",
+                        output.status
+                    ))
+                    .spawn()?;
             }
-            value += line;
+            let mut value = String::new();
+            let output_str = String::from_utf8_lossy(&output.stdout);
+            let mut output: Vec<&str> = output_str.lines().collect();
+            if output.len() < 2 {
+                //hyprctl should print 'no such option' for non-existing options (one line). therefore
+                //if there are less than 2 lines something went wrong.
+                let _ = Command::new("notify-send")
+                    .arg("-a")
+                    .arg("hyprplasma daemon")
+                    .arg(format!("hyprctl getoption {hyprkey} failed:{}", output_str))
+                    .spawn()?;
+            }
+            output.pop();
+            for line in output {
+                if value.len() > 0 {
+                    value += "\n";
+                }
+                value += line;
+            }
+            config.insert(key.parse()?, value);
         }
-        config.insert(key.parse()?, value);
+
+        self.map = config;
+        Ok(())
     }
 
-    let config: Config = Config { map: config };
-    Ok(config)
+    fn load() -> Result<Self> {
+        let mut result = Config {
+            map: HashMap::new(),
+        };
+        result.reload()?;
+        Ok(result)
+    }
+}
+
+pub fn init() -> Result<()> {
+    CONFIG.set(Mutex::new(Config::load()?)).unwrap();
+    Ok(())
+}
+pub fn reload() -> Result<()> {
+    let mut config = CONFIG.get().unwrap().lock().unwrap();
+    config.reload()
+}
+pub fn get_as_str(key: ConfigKeys) -> String {
+    let config = CONFIG.get().unwrap().lock().unwrap();
+    config.get_as_str(key).into()
 }
