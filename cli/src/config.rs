@@ -1,3 +1,4 @@
+use crate::notify_send;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::process::Command;
@@ -34,11 +35,7 @@ impl Config {
         match val {
             Some(val) => val.as_str(),
             None => {
-                let _ = Command::new("notify-send")
-                    .arg("-a")
-                    .arg("hyprplasma daemon")
-                    .arg(format!("config option '{key}' not found"))
-                    .status();
+                notify_send(format!("config option '{key}' not found").as_str());
                 return "";
             }
         }
@@ -88,11 +85,7 @@ impl Config {
             if output.len() < 2 {
                 //hyprctl should print 'no such option' for non-existing options (one line). therefore
                 //if there are less than 2 lines something went wrong.
-                let _ = Command::new("notify-send")
-                    .arg("-a")
-                    .arg("hyprplasma daemon")
-                    .arg(format!("hyprctl getoption {hyprkey} failed:{}", output_str))
-                    .spawn()?;
+                notify_send(format!("hyprctl getoption {hyprkey} failed:{}", output_str).as_str());
             }
             output.pop();
             for line in output {
