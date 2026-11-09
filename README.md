@@ -46,6 +46,20 @@ plasmashell&disown
 ## Configuration
 see hyprplasma.lua
 
+### systemd-logind integration
+
+The Rust daemon listens for logind session `Lock()` and `Unlock()` signals.
+It also listens for `PrepareForSleep`, holds a sleep delay inhibitor while
+the session is active, and releases it after the configured `lock_command`
+has been started. The inhibitor is reacquired after resume.
+
+Configure `lock_command` in `~/.config/hypr/hyprplasma.toml` to invoke your
+screen locker. Do not set it to `loginctl lock-session`: that command is the
+request which triggers this integration and would just feed back into itself.
+The daemon updates logind's `LockedHint` after starting the command. A
+long-running locker process is monitored and clears the hint when it exits;
+a short-lived launcher should ensure the locker itself clears `LockedHint`
+when the user unlocks.
 
 ## Bugs
 

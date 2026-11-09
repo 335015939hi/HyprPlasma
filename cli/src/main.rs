@@ -5,6 +5,7 @@ use std::sync::OnceLock;
 
 mod config;
 mod daemon;
+mod logind;
 
 #[derive(Parser)]
 struct Args {

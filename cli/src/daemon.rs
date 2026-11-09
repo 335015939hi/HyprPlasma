@@ -128,6 +128,13 @@ pub async fn daemon() -> Result<()> {
         .build()
         .await?;
 
+    let lock_command = CONFIG.get().unwrap().lock_command.clone();
+    let _logind_task = tokio::spawn(async move {
+        if let Err(error) = crate::logind::run(lock_command).await {
+            eprintln!("[logind] integration stopped: {error:#}");
+        }
+    });
+
     println!("HyprPlasma session services registered");
 
     tokio::signal::ctrl_c().await?;
