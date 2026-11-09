@@ -17,16 +17,36 @@ SPluginConfig g_config = {};
 
 void init() {
   g_config.logout_command = makeShared<Config::Values::CStringValue>(
-      CONFIG_PREFIX "logout_command", "Command to run on logout", "");
+      CONFIG_PREFIX "logout_command", "Command to run to logout from plasma",
+      "");
 
   g_config.lock_command = makeShared<Config::Values::CStringValue>(
-      CONFIG_PREFIX "lock_command", "Command to run on lock screen", "");
+      CONFIG_PREFIX "lock_command", "Command to run to lock screen from plasma",
+      "");
 
   g_config.reboot_command = makeShared<Config::Values::CStringValue>(
-      CONFIG_PREFIX "reboot_command", "Command to run on reboot", "");
+      CONFIG_PREFIX "reboot_command", "Command to run to reboot from plasma",
+      "");
 
   g_config.shutdown_command = makeShared<Config::Values::CStringValue>(
-      CONFIG_PREFIX "shutdown_command", "Command to run on shutdown", "");
+      CONFIG_PREFIX "shutdown_command",
+      "Command to run to shutdown from plasma", "");
+  g_config.switch_user_command = makeShared<Config::Values::CStringValue>(
+      CONFIG_PREFIX "switch_user_command",
+      "Command to run to switch user from plasma", "");
+  g_config.save_session_command = makeShared<Config::Values::CStringValue>(
+      CONFIG_PREFIX "save_session_command",
+      "Command to run save session from plasma", "");
+  g_config.logout_and_shutdown_command =
+      makeShared<Config::Values::CStringValue>(
+          CONFIG_PREFIX "logout_and_shutdown",
+          "Command to run to logout and shutdown from plasma", "");
+  g_config.logout_and_reboot_command = makeShared<Config::Values::CStringValue>(
+      CONFIG_PREFIX "logout_and_reboot",
+      "Command to run to logout and reboot from plasma", "");
+  g_config.session_actions_command = makeShared<Config::Values::CStringValue>(
+      CONFIG_PREFIX "session_actions_command",
+      "Command to run to show session menu from plasma", "");
 
   g_config.cancel_showdesktop_on_workspaceswitch =
       makeShared<Config::Values::CBoolValue>(
@@ -42,6 +62,16 @@ void init() {
           g_config.reboot_command),
       Hyprutils::Memory::dynamicPointerCast<Config::Values::IValue>(
           g_config.shutdown_command),
+      Hyprutils::Memory::dynamicPointerCast<Config::Values::IValue>(
+          g_config.switch_user_command),
+      Hyprutils::Memory::dynamicPointerCast<Config::Values::IValue>(
+          g_config.save_session_command),
+      Hyprutils::Memory::dynamicPointerCast<Config::Values::IValue>(
+          g_config.logout_and_reboot_command),
+      Hyprutils::Memory::dynamicPointerCast<Config::Values::IValue>(
+          g_config.logout_and_shutdown_command),
+      Hyprutils::Memory::dynamicPointerCast<Config::Values::IValue>(
+          g_config.session_actions_command),
       Hyprutils::Memory::dynamicPointerCast<Config::Values::IValue>(
           g_config.cancel_showdesktop_on_workspaceswitch),
   };

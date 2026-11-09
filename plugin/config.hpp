@@ -14,6 +14,11 @@ struct SPluginConfig {
   SP<Config::Values::CStringValue> lock_command;
   SP<Config::Values::CStringValue> reboot_command;
   SP<Config::Values::CStringValue> shutdown_command;
+  SP<Config::Values::CStringValue> switch_user_command;
+  SP<Config::Values::CStringValue> save_session_command;
+  SP<Config::Values::CStringValue> logout_and_shutdown_command;
+  SP<Config::Values::CStringValue> logout_and_reboot_command;
+  SP<Config::Values::CStringValue> session_actions_command;
   SP<Config::Values::CBoolValue> cancel_showdesktop_on_workspaceswitch;
 };
 extern SPluginConfig g_config;
