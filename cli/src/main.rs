@@ -1,5 +1,3 @@
-use std::sync::Mutex;
-
 use anyhow::Result;
 use clap::Parser;
 use clap::Subcommand;
