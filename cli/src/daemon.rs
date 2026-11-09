@@ -1,6 +1,12 @@
 use crate::config;
 use crate::config::ConfigKeys;
 use anyhow::Result;
+use std::env;
+use std::io;
+use std::io::BufRead;
+use std::io::BufReader;
+use std::os::unix::net::UnixStream;
+use std::path::PathBuf;
 use std::process::Command;
 use std::process::ExitStatus;
 use zbus::connection;
@@ -106,6 +112,44 @@ impl ScreenSaver {
     }
 }
 
+fn socket_path() -> io::Result<PathBuf> {
+    let runtime =
+        env::var("XDG_RUNTIME_DIR").map_err(|e| io::Error::new(io::ErrorKind::NotFound, e))?;
+
+    let instance = env::var("HYPRLAND_INSTANCE_SIGNATURE")
+        .map_err(|e| io::Error::new(io::ErrorKind::NotFound, e))?;
+
+    Ok(PathBuf::from(runtime)
+        .join("hypr")
+        .join(instance)
+        .join(".socket2.sock"))
+}
+
+async fn config_watcher() -> Result<()> {
+    let stream = UnixStream::connect(socket_path()?)?;
+    let mut reader = BufReader::new(stream);
+    let mut line = String::new();
+
+    loop {
+        line.clear();
+
+        if reader.read_line(&mut line)? == 0 {
+            break;
+        }
+
+        if let Some((event, _data)) = line.trim_end().split_once(">>") {
+            match event {
+                "configreloaded" => {
+                    println!("Hyprland configuration reloaded");
+                    let _ = config::reload();
+                }
+                _ => {}
+            }
+        }
+    }
+    Ok(())
+}
+
 #[tokio::main]
 pub async fn daemon() -> Result<()> {
     // Register LogoutPrompt
@@ -128,6 +172,8 @@ pub async fn daemon() -> Result<()> {
         .serve_at("/ScreenSaver", ScreenSaver)
         .build()
         .await?;
+
+    let _config_watch = config_watcher().await?;
 
     println!("HyprPlasma session services registered");
 

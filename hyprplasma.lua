@@ -69,6 +69,14 @@ if hl.plugin and hl.plugin.hyprplasma then
 				-- when switching workspaces, cancel show desktop. this only works if plasmashell is running
 				cancel_showdesktop_on_workspaceswitch = true,
 				lock_command = "hyprlock",
+				logout_command = "",
+				shutdown_command = "",
+				reboot_command = "",
+				switch_user_command = "",
+				save_session_command = "",
+				logout_and_shutdown_command = "",
+				logout_and_reboot_command = "",
+				session_actions_command = "",
 			},
 		},
 	})

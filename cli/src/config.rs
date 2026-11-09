@@ -68,7 +68,6 @@ impl Config {
         let mut config: HashMap<ConfigKeys, String> = HashMap::new();
         for key in ConfigKeys::VARIANTS {
             let hyprkey = format!("plugin.hyprplasma.{key}");
-            println!("{key}");
             let output = Command::new("hyprctl")
                 .arg("getoption")
                 .arg(&hyprkey)
