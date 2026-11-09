@@ -68,6 +68,7 @@ if hl.plugin and hl.plugin.hyprplasma then
 			hyprplasma = {
 				-- when switching workspaces, cancel show desktop. this only works if plasmashell is running
 				cancel_showdesktop_on_workspaceswitch = true,
+				lock_command = "hyprlock",
 			},
 		},
 	})

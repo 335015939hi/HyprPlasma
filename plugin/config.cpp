@@ -39,10 +39,10 @@ void init() {
       "Command to run save session from plasma", "");
   g_config.logout_and_shutdown_command =
       makeShared<Config::Values::CStringValue>(
-          CONFIG_PREFIX "logout_and_shutdown",
+          CONFIG_PREFIX "logout_and_shutdown_command",
           "Command to run to logout and shutdown from plasma", "");
   g_config.logout_and_reboot_command = makeShared<Config::Values::CStringValue>(
-      CONFIG_PREFIX "logout_and_reboot",
+      CONFIG_PREFIX "logout_and_reboot_command",
       "Command to run to logout and reboot from plasma", "");
   g_config.session_actions_command = makeShared<Config::Values::CStringValue>(
       CONFIG_PREFIX "session_actions_command",
