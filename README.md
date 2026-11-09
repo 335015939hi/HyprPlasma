@@ -8,7 +8,7 @@ Before building, make sure you have:
 
 - Hyprland installed with development headers and pkg-config metadata
 - CMake 3.22 or newer
-- A C++23-capable compiler
+- A C++26-capable compiler
 - A C compiler
 - `wayland-server` development libraries
 - `Plasma Wayland protocols` installed

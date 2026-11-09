@@ -8,8 +8,8 @@
 #include <hyprland/src/desktop/state/WindowState.hpp>
 #include <hyprland/src/desktop/view/LayerSurface.hpp>
 #include <hyprland/src/desktop/view/WLSurface.hpp>
-#include <hyprland/src/desktop/view/Window.hpp>
 #include <hyprland/src/desktop/view/types/AlphaModifiable.hpp>
+#include <hyprland/src/desktop/view/window/Window.hpp>
 #include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/helpers/memory/Memory.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
@@ -328,10 +328,10 @@ uint32_t activeNativeSurfaceInhibitors() {
     bool mapped = false;
 
     if (const auto window = dynamicPointerCast<Desktop::View::CWindow>(view)) {
-      mapped = window->m_isMapped;
+      mapped = window->mapped();
     } else if (const auto layer =
                    dynamicPointerCast<Desktop::View::CLayerSurface>(view)) {
-      mapped = layer->m_mapped;
+      mapped = layer->mapped();
     }
 
     if (mapped)

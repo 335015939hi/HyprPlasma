@@ -5,8 +5,8 @@
 #include <desktop/DesktopTypes.hpp>
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/desktop/view/WLSurface.hpp>
-#include <hyprland/src/desktop/view/Window.hpp>
 #include <hyprland/src/desktop/view/types/GeometricMovable.hpp>
+#include <hyprland/src/desktop/view/window/Window.hpp>
 #include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/layout/LayoutManager.hpp>
 #include <hyprland/src/layout/target/Target.hpp>
@@ -76,6 +76,12 @@ static void bindPlasmaShell(wl_client *client, void *data, uint32_t version,
   wl_resource_set_implementation(resource, &s_shellImpl, data, nullptr);
 }
 
+static void set_floating(PHLWINDOW window) {
+  auto target = window->layoutTarget();
+  if (target)
+    target->setFloating(true);
+}
+
 static bool updateGeometry(PlasmaSurfaceState *state) {
   if (!state || !state->hyprSurface)
     return false;
@@ -85,16 +91,15 @@ static bool updateGeometry(PlasmaSurfaceState *state) {
     return false;
 
   auto window = Desktop::View::CWindow::fromView(surface->view());
-  if (!window || window->m_isX11)
+  if (!window || window->backend().isX11())
     return false;
 
-  auto xdg = window->m_xdgSurface.lock();
   auto target = window->layoutTarget();
-  if (!xdg || !target || !target->space())
+  if (!target || !target->space())
     return false;
 
   // Use committed XDG window geometry, not the raw buffer dimensions.
-  auto size = xdg->m_current.geometry.size();
+  auto size = window->backend().geometry().box.size();
 
   if (size.x <= 0 || size.y <= 0)
     return false;
@@ -142,9 +147,8 @@ static bool openWindowListener_real(PHLWINDOW window) {
       if (!updateGeometry(state)) {
         hyprplasma::log(Log::WARN,
                         "Could not apply initial position to Plasma surface");
-        // set floating directly. going through the layout manager breaks things
         if (state->should_float) {
-          window->m_isFloating = true;
+          set_floating(window);
         }
       } else {
         hyprplasma::log(Log::DEBUG, "Applied initial Plasma position {}, {}",
@@ -160,7 +164,7 @@ static bool openWindowListener_real(PHLWINDOW window) {
     }
     // set no initial focus
     if (state->no_initial_focus) {
-      window->m_noInitialFocus = true;
+      window->m_state |= Desktop::View::WINDOW_STATE_NO_INITIAL_FOCUS;
     }
 
     cancel_showdesktop = state->will_cancel_showdesktop;
@@ -325,7 +329,7 @@ static void surfaceSetRole(wl_client *, wl_resource *resource, uint32_t role) {
   case ORG_KDE_PLASMA_SURFACE_ROLE_APPLETPOPUP: //=7
     state->hide_when_showdesktop = false;
     state->should_float = true;
-    state->no_initial_focus = true;
+    // state->no_initial_focus = true;
     state->will_cancel_showdesktop = false;
     break;
   default:
@@ -464,9 +468,9 @@ static void handleGetSurface(wl_client *client, wl_resource *shellResource,
           // set floating directly. going through the layout manager
           // breaks things
           if (state->should_float) {
-            window->m_isFloating = true;
+            set_floating(window);
           }
-          auto xdg = window->m_xdgSurface.lock();
+          /*auto xdg = window->m_xdgSurface.lock();
           auto toplevel = xdg ? xdg->m_toplevel.lock() : nullptr;
 
           if (xdg && toplevel) {
@@ -478,7 +482,7 @@ static void handleGetSurface(wl_client *client, wl_resource *shellResource,
                             current.size, geometry.pos(), geometry.size(),
                             limits.minSize, limits.maxSize,
                             window->m_isFloating, state->role);
-          }
+          }*/
         }
       }
     }

@@ -3,12 +3,12 @@
 #include <algorithm>
 #include <cstdint>
 #include <debug/log/Logger.hpp>
-#include <desktop/Workspace.hpp>
 #include <desktop/state/FocusState.hpp>
 #include <event/EventBus.hpp>
 #include <layout/space/Space.hpp>
 #include <memory>
 #include <output/Monitor.hpp>
+#include <src/desktop/DesktopTypes.hpp>
 #include <state/MonitorState.hpp>
 #include <state/WorkspaceState.hpp>
 #include <string>
@@ -16,6 +16,8 @@
 #include <unordered_set>
 #include <vector>
 #include <wayland-server-core.h>
+#include <workspace/HLWorkspace.hpp>
+#include <workspace/RegularWorkspace.hpp>
 
 #include "plasma-virtual-desktop-server-protocol.h"
 
@@ -45,9 +47,10 @@ struct VirtualDesktopState {
 
 static wl_global *g_plasmaVirtualDesktopManagement = nullptr;
 static uint64_t g_nextDesktopId = 0;
-static std::vector<CWorkspace *> g_workspaceOrder;
+static std::vector<Workspace::CHLWorkspace *> g_workspaceOrder;
 static bool g_suppressWorkspaceCreated = false;
-static std::unordered_map<CWorkspace *, std::unique_ptr<WorkspaceWatch>>
+static std::unordered_map<Workspace::CHLWorkspace *,
+                          std::unique_ptr<WorkspaceWatch>>
     g_workspaces;
 static std::unordered_set<wl_resource *> g_managers;
 static std::unordered_map<wl_resource *, VirtualDesktopState *> g_desktops;
@@ -56,7 +59,7 @@ static CHyprSignalListener g_workspaceCreatedListener;
 // Forward declarations
 static void bindPlasmaVirtualDesktop(wl_client *client, void *data,
                                      uint32_t version, uint32_t id);
-static void onWorkspaceDestroyed(CWorkspace *workspace);
+static void onWorkspaceDestroyed(Workspace::CHLWorkspace *workspace);
 static void registerWorkspace(PHLWORKSPACE workspace, bool announce);
 static void updateDesktopPosition(VirtualDesktopState *state);
 static void sendDesktopState(VirtualDesktopState *state);
@@ -87,7 +90,7 @@ static std::vector<WorkspaceWatch *> orderedWorkspaces() {
       continue;
 
     auto ws = it->second->workspace.lock();
-    if (!ws || ws->m_isSpecialWorkspace)
+    if (!ws || ws->type() == Workspace::eWorkspaceType::SPECIAL)
       continue;
 
     result.push_back(it->second.get());
@@ -146,7 +149,7 @@ static void updateAllDesktopPositions() {
   }
 }
 
-static void forgetWorkspace(CWorkspace *workspace) {
+static void forgetWorkspace(Workspace::CHLWorkspace *workspace) {
   auto it = g_workspaces.find(workspace);
   if (it == g_workspaces.end())
     return;
@@ -167,12 +170,12 @@ static void forgetWorkspace(CWorkspace *workspace) {
 // Workspace lifecycle
 // -----------------------------------------------------------------------------
 
-static void onWorkspaceDestroyed(CWorkspace *workspace) {
+static void onWorkspaceDestroyed(Workspace::CHLWorkspace *workspace) {
   forgetWorkspace(workspace);
 }
 
 static void registerWorkspace(PHLWORKSPACE workspace, bool announce) {
-  if (!workspace || workspace->m_isSpecialWorkspace)
+  if (!workspace || workspace->type() == Workspace::eWorkspaceType::SPECIAL)
     return;
   if (g_workspaces.contains(workspace.get()))
     return;
@@ -239,9 +242,9 @@ static void sendDesktopState(VirtualDesktopState *state) {
   org_kde_plasma_virtual_desktop_send_desktop_id(state->resource,
                                                  state->id.c_str());
   org_kde_plasma_virtual_desktop_send_name(state->resource,
-                                           workspace->m_name.c_str());
+                                           workspace->displayName().c_str());
   sendDesktopPosition(state);
-  if (workspace->m_visible) {
+  if (workspace->visible()) {
     org_kde_plasma_virtual_desktop_send_activated(state->resource);
     if (wl_resource_get_version(state->resource) >= 4) {
       auto monitor = workspace->m_monitor.lock();
@@ -337,7 +340,7 @@ static void attachDesktopListeners(VirtualDesktopState *state) {
       hyprplasma::proto::clear_show_desktop();
     }
 
-    if (workspace->m_visible) {
+    if (workspace->visible()) {
       org_kde_plasma_virtual_desktop_send_activated(state->resource);
 
       if (wl_resource_get_version(state->resource) >= 4) {
@@ -360,7 +363,7 @@ static void attachDesktopListeners(VirtualDesktopState *state) {
       return;
 
     org_kde_plasma_virtual_desktop_send_name(state->resource,
-                                             workspace->m_name.c_str());
+                                             workspace->displayName().c_str());
 
     org_kde_plasma_virtual_desktop_send_done(state->resource);
   });
@@ -368,7 +371,7 @@ static void attachDesktopListeners(VirtualDesktopState *state) {
   state->listeners.monitorChanged =
       workspace->m_events.monitorChanged.listen([state] {
         auto workspace = state->workspace.lock();
-        if (!workspace || !state->resource || !workspace->m_visible ||
+        if (!workspace || !state->resource || !workspace->visible() ||
             wl_resource_get_version(state->resource) < 4)
           return;
 
@@ -452,16 +455,14 @@ static void managerRequestCreateVirtualDesktop(wl_client *, wl_resource *,
   const std::string desktopName = name && *name ? name : "New Desktop";
 
   // Hyprland allocates unique IDs for named workspaces.
-  const auto workspaceID =
-      State::workspaceState()->nextAvailableNamedWorkspace();
+  // const auto workspaceID =
+  //    State::workspaceState()->nextAvailableNamedWorkspace();
+  auto workspace = State::workspaceState()->createNamed(desktopName, monitor);
 
   // CWorkspace::create emits workspace.created synchronously.
   // We'll register this one ourselves so we can insert it at the
   // requested Plasma position.
   g_suppressWorkspaceCreated = true;
-
-  auto workspace = State::workspaceState()->create(workspaceID, monitor->m_id,
-                                                   desktopName, false);
 
   g_suppressWorkspaceCreated = false;
 
@@ -472,7 +473,10 @@ static void managerRequestCreateVirtualDesktop(wl_client *, wl_resource *,
   }
 
   // Keep an otherwise-empty desktop alive.
-  workspace->setPersistent(true);
+  auto regular = dynamicPointerCast<Workspace::CRegularWorkspace>(workspace);
+
+  if (regular)
+    regular->setPersistent(true);
 
   registerWorkspace(workspace, false);
 
@@ -489,9 +493,9 @@ static void managerRequestCreateVirtualDesktop(wl_client *, wl_resource *,
                           workspace.get());
 
   hyprplasma::log(Log::INFO,
-                  "Created Plasma virtual desktop '{}' (Hyprland workspace {}) "
+                  "Created Plasma virtual desktop '{}' "
                   "at position {}",
-                  desktopName, workspaceID, insertPosition);
+                  desktopName, insertPosition);
 
   // Announce the new desktop to every manager.
   notifyWorkspaceCreated(watch);
@@ -515,7 +519,7 @@ static void managerRequestRemoveVirtualDesktop(wl_client *, wl_resource *,
   }
 
   auto workspace = watch->workspace.lock();
-  if (!workspace || workspace->m_isSpecialWorkspace)
+  if (!workspace || workspace->type() == Workspace::eWorkspaceType::SPECIAL)
     return;
 
   const auto desktops = orderedWorkspaces();
@@ -570,7 +574,7 @@ static void managerRequestRemoveVirtualDesktop(wl_client *, wl_resource *,
   hyprplasma::log(
       Log::INFO,
       "Removing Plasma desktop {} and moving its windows to workspace {}",
-      desktopId, replacement->m_id);
+      desktopId, replacement->displayName());
 
   // Switch away before removing an active workspace.
   if (monitor->m_activeWorkspace == workspace) {
@@ -580,8 +584,8 @@ static void managerRequestRemoveVirtualDesktop(wl_client *, wl_resource *,
   // Take a copy because assignToSpace() modifies the old space's target list.
   std::vector<SP<Layout::ITarget>> targets;
 
-  if (workspace->m_space) {
-    for (const auto &targetRef : workspace->m_space->targets()) {
+  if (workspace->space()) {
+    for (const auto &targetRef : workspace->space()->targets()) {
       if (auto target = targetRef.lock())
         targets.push_back(target);
     }
@@ -589,7 +593,7 @@ static void managerRequestRemoveVirtualDesktop(wl_client *, wl_resource *,
 
   // Move all windows/layout targets to the replacement workspace.
   for (const auto &target : targets)
-    target->assignToSpace(replacement->m_space);
+    target->assignToSpace(replacement->space());
 
   // Remove the protocol desktop and notify clients.
   // The workspace object itself will be destroyed when its remaining
@@ -597,7 +601,8 @@ static void managerRequestRemoveVirtualDesktop(wl_client *, wl_resource *,
   forgetWorkspace(workspace.get());
 
   // Release the self-reference used to keep empty workspaces alive.
-  workspace->setPersistent(false);
+  auto regular = dynamicPointerCast<Workspace::CRegularWorkspace>(workspace);
+  regular->setPersistent(false);
 }
 
 static const struct org_kde_plasma_virtual_desktop_management_interface
@@ -665,20 +670,32 @@ void plasma_virtualdesktop_init(void) {
   // Register existing workspaces.
   auto workspaces = State::workspaceState()->workspacesCopy();
   std::sort(workspaces.begin(), workspaces.end(),
-            [](const auto &a, const auto &b) { return a->m_id < b->m_id; });
+            [](const auto &a, const auto &b) {
+              const auto aid = a->numberedID();
+              const auto bid = b->numberedID();
+              // Numbered workspaces first.
+              if (aid.has_value() != bid.has_value())
+                return aid.has_value();
+              // Compare numbered workspaces numerically.
+              if (aid && bid)
+                return *aid < *bid;
+              // Named workspaces have no numeric ID.
+              return a->addressableName() < b->addressableName();
+            });
 
   for (const auto &workspace : workspaces)
     registerWorkspace(workspace, false);
 
   // Track future workspaces.
-  g_workspaceCreatedListener = Event::bus()->m_events.workspace.created.listen(
-      [](PHLWORKSPACEREF workspaceRef) {
-        if (g_suppressWorkspaceCreated)
-          return;
-        auto workspace = workspaceRef.lock();
-        if (workspace)
-          registerWorkspace(workspace, true);
-      });
+  g_workspaceCreatedListener =
+      Event::bus()->m_events.workspace.createdLate.listen(
+          [](PHLWORKSPACEREF workspaceRef) {
+            if (g_suppressWorkspaceCreated)
+              return;
+            auto workspace = workspaceRef.lock();
+            if (workspace)
+              registerWorkspace(workspace, true);
+          });
 
   g_plasmaVirtualDesktopManagement =
       wl_global_create(g_pCompositor->m_wlDisplay,
@@ -718,7 +735,8 @@ void plasma_virtualdesktop_exit(void) {
   g_workspaceOrder.clear();
 }
 
-std::string virtualdesktop_id_for_workspace(CWorkspace *workspace) {
+std::string
+virtualdesktop_id_for_workspace(Workspace::CHLWorkspace *workspace) {
   if (!workspace)
     return {};
 

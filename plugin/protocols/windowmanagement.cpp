@@ -9,10 +9,11 @@
 #include <cstdint>
 #include <cstdlib>
 #include <debug/log/Logger.hpp>
-#include <desktop/Workspace.hpp>
 #include <desktop/state/FocusState.hpp>
 #include <desktop/state/WindowState.hpp>
-#include <desktop/view/Window.hpp>
+#include <desktop/view/focusable/FocusBlockReasons.hpp>
+#include <desktop/view/window/Window.hpp>
+#include <desktop/view/window/WindowPresentation.hpp>
 #include <event/EventBus.hpp>
 #include <filesystem>
 #include <fstream>
@@ -133,7 +134,7 @@ static std::unordered_map<std::string, std::optional<std::string>>
 // Keep show-desktop blocking independent so clearing it does not clear other
 // reasons owned by the compositor.
 static constexpr auto INPUT_BLOCK_SHOW_DESKTOP =
-    static_cast<Desktop::View::eWindowInputBlockReason>(1u << 3);
+    static_cast<Desktop::View::eFocusBlockReason>(1u << 3);
 
 static bool g_showDesktop = false;
 static PHLWINDOWREF g_showDesktopFocusedWindow;
@@ -399,7 +400,7 @@ static std::string desktopIdForWindow(CWindow *window) {
 
   // A special workspace is associated with the monitor's currently active
   // regular workspace for Pager purposes.
-  if (workspace && workspace->m_isSpecialWorkspace) {
+  if (workspace && workspace->type() == Workspace::eWorkspaceType::SPECIAL) {
     auto monitor = window->m_monitor.lock();
     if (monitor)
       workspace = monitor->m_activeWorkspace;
@@ -436,13 +437,13 @@ static uint32_t stateForWindow(CWindow *window) {
   if (Desktop::focusState()->window() == window->m_self.lock())
     state |= WindowState::ACTIVE;
 
-  if (window->m_pinned)
+  if (window->m_state & Desktop::View::WINDOW_STATE_PINNED)
     state |= WindowState::ON_ALL_DESKTOPS;
 
   if (hyprplasma::proto::plasma_surface_skips_taskbar(window))
     state |= WindowState::SKIP_TASKBAR;
 
-  if (window->m_isUrgent)
+  if (window->m_hints & Desktop::View::WINDOW_HINT_URGENT)
     state |= WindowState::DEMANDS_ATTENTION;
 
   return state;
@@ -456,10 +457,10 @@ static void sendTitle(WindowWatch *watch, CWindow *window) {
   if (!watch || !window || watch->resources.empty())
     return;
 
-  if (watch->title == window->m_title)
+  if (watch->title == window->metadata().title())
     return;
 
-  watch->title = window->m_title;
+  watch->title = window->metadata().title();
 
   for (auto *resource : watch->resources)
     org_kde_plasma_window_send_title_changed(resource, watch->title.c_str());
@@ -469,7 +470,7 @@ static void sendIconName(WindowWatch *watch, CWindow *window) {
   if (!watch || !window || watch->resources.empty())
     return;
 
-  const auto resolved = desktopIconForAppId(window->m_class);
+  const auto resolved = desktopIconForAppId(window->metadata().appID());
   const std::string nextIcon = resolved.value_or("");
 
   if (watch->iconValid && watch->iconName == nextIcon)
@@ -495,10 +496,10 @@ static void sendAppId(WindowWatch *watch, CWindow *window) {
   if (!watch || !window || watch->resources.empty())
     return;
 
-  if (watch->appId == window->m_class)
+  if (watch->appId == window->metadata().appID())
     return;
 
-  watch->appId = window->m_class;
+  watch->appId = window->metadata().appID();
 
   for (auto *resource : watch->resources)
     org_kde_plasma_window_send_app_id_changed(resource, watch->appId.c_str());
@@ -557,11 +558,14 @@ static void sendDesktopMembership(WindowWatch *watch, CWindow *window) {
 
   // An empty desktop list means "on all desktops" in this protocol.
   const std::string nextDesktop =
-      window->m_pinned ? std::string{} : desktopIdForWindow(window);
+      window->m_state & Desktop::View::WINDOW_STATE_PINNED
+          ? std::string{}
+          : desktopIdForWindow(window);
 
   // Do not replace a valid membership with an accidental empty list if the
   // workspace has not been registered by the virtual-desktop module.
-  if (!window->m_pinned && nextDesktop.empty())
+  if (!(window->m_state & Desktop::View::WINDOW_STATE_PINNED) &&
+      nextDesktop.empty())
     return;
 
   if (watch->desktopValid && watch->desktopId == nextDesktop)
@@ -594,20 +598,23 @@ static void sendInitialWindowState(WindowWatch *watch, wl_resource *resource) {
     return;
 
   auto window = watch->window.lock();
-  if (!window || !window->m_isMapped)
+  if (!window || !window->mapped())
     return;
 
   const auto version = wl_resource_get_version(resource);
   const auto geometry = geometryForWindow(window.get());
   const auto state = stateForWindow(window.get());
-  const auto desktopId =
-      window->m_pinned ? std::string{} : desktopIdForWindow(window.get());
+  const auto desktopId = (window->m_state & Desktop::View::WINDOW_STATE_PINNED)
+                             ? std::string{}
+                             : desktopIdForWindow(window.get());
 
-  org_kde_plasma_window_send_title_changed(resource, window->m_title.c_str());
+  org_kde_plasma_window_send_title_changed(resource,
+                                           window->metadata().title().c_str());
 
-  org_kde_plasma_window_send_app_id_changed(resource, window->m_class.c_str());
+  org_kde_plasma_window_send_app_id_changed(resource,
+                                            window->metadata().appID().c_str());
 
-  const auto iconName = desktopIconForAppId(window->m_class);
+  const auto iconName = desktopIconForAppId(window->metadata().appID());
   if (iconName) {
     org_kde_plasma_window_send_themed_icon_name_changed(resource,
                                                         iconName->c_str());
@@ -624,7 +631,8 @@ static void sendInitialWindowState(WindowWatch *watch, wl_resource *resource) {
 
   if (version >= 8) {
     org_kde_plasma_window_send_pid_changed(
-        resource, static_cast<uint32_t>(std::max<pid_t>(0, window->getPID())));
+        resource,
+        static_cast<uint32_t>(std::max<pid_t>(0, window->backend().pid())));
 
     if (!desktopId.empty()) {
       org_kde_plasma_window_send_virtual_desktop_entered(resource,
@@ -641,8 +649,8 @@ static void sendInitialWindowState(WindowWatch *watch, wl_resource *resource) {
   if (version >= 4)
     org_kde_plasma_window_send_initial_state(resource);
 
-  watch->title = window->m_title;
-  watch->appId = window->m_class;
+  watch->title = window->metadata().title();
+  watch->appId = window->metadata().appID();
   watch->state = state;
   watch->stateValid = true;
   watch->geometry = geometry;
@@ -710,7 +718,7 @@ static void announceWindow(WindowWatch *watch) {
     return;
 
   auto window = watch->window.lock();
-  if (!window || !window->m_isMapped)
+  if (!window || !window->mapped())
     return;
 
   const auto id = ++g_nextWindowId;
@@ -741,7 +749,7 @@ static void announceWindow(WindowWatch *watch) {
 }
 
 static void registerWindow(PHLWINDOW window) {
-  if (!window || !window->m_isMapped)
+  if (!window || !window->mapped())
     return;
 
   auto *raw = window.get();
@@ -789,7 +797,7 @@ static std::vector<std::string> currentStackingOrder() {
   std::vector<std::string> result;
 
   for (const auto &window : Desktop::windowState()->windows()) {
-    if (!window || !window->m_isMapped)
+    if (!window || !window->mapped())
       continue;
 
     auto *watch = findWindow(window.get());
@@ -951,16 +959,17 @@ static void windowRequestEnterVirtualDesktop(wl_client *, wl_resource *resource,
   auto workspace =
       hyprplasma::proto::virtualdesktop_workspace_for_id(desktopId);
 
-  if (!window || !workspace || workspace->m_isSpecialWorkspace ||
-      !workspace->m_space)
+  if (!window || !workspace ||
+      workspace->type() == Workspace::eWorkspaceType::SPECIAL ||
+      !workspace->space())
     return;
 
   // Hyprland has one regular workspace per window. The Pager's drag operation
   // asks to enter the target desktop, then leave the source desktop.
-  window->m_pinned = false;
+  window->m_state &= ~Desktop::View::WINDOW_STATE_PINNED;
 
   if (auto target = window->layoutTarget())
-    target->assignToSpace(workspace->m_space);
+    target->assignToSpace(workspace->space());
 }
 
 static void windowRequestEnterNewVirtualDesktop(wl_client *, wl_resource *) {}
@@ -1040,19 +1049,19 @@ static void createWindowResource(wl_client *client, wl_resource *manager,
 // and the user's configured fadeIn/fadeOut animations. Unlike an immediate
 // hidden-state toggle, this does not suspend the Wayland client.
 static void setWindowHiddenWithAnimation(PHLWINDOW window, bool hidden) {
-  if (!window || !window->m_isMapped)
+  if (!window || !window->mapped())
     return;
 
   window->setInputBlocked(INPUT_BLOCK_SHOW_DESKTOP, hidden);
 
-  auto &fade = window->alpha(Desktop::View::WINDOW_ALPHA_FADE);
+  auto &fade = window->presentation().alpha(Desktop::View::WINDOW_ALPHA_FADE);
   fade->setConfig(Config::animationTree()->getAnimationPropertyConfig(
       hidden ? "fadeOut" : "fadeIn"));
   *fade = hidden ? 0.F : 1.F;
 }
 
 static void hideWindowForShowDesktop(PHLWINDOW window) {
-  if (!g_showDesktop || !window || !window->m_isMapped || window->isHidden())
+  if (!g_showDesktop || !window || !window->mapped() || window->isHidden())
     return;
   if (!hyprplasma::proto::hide_when_show_desktop(window.get())) {
     hyprplasma::log(Log::INFO, "not hiding a window");
@@ -1117,7 +1126,7 @@ static void setShowDesktop(bool enabled) {
     for (const auto &weak : hiddenWindows) {
       auto window = weak.lock();
 
-      if (window && window->m_isMapped)
+      if (window && window->mapped())
         setWindowHiddenWithAnimation(window, false);
     }
 
@@ -1126,8 +1135,8 @@ static void setShowDesktop(bool enabled) {
     auto focused = g_showDesktopFocusedWindow.lock();
     g_showDesktopFocusedWindow.reset();
 
-    if (focused && focused->m_isMapped && !focused->isHidden() &&
-        focused->m_workspace && focused->m_workspace->m_visible) {
+    if (focused && focused->mapped() && !focused->isHidden() &&
+        focused->m_workspace && focused->m_workspace->visible()) {
       Desktop::focusState()->fullWindowFocus(
           focused, Desktop::FOCUS_REASON_DESKTOP_STATE_CHANGE);
     }
@@ -1206,7 +1215,7 @@ static void bindWindowManagement(wl_client *client, void *,
       resource, g_showDesktop ? 1 : 0);
 
   for (const auto &window : Desktop::windowState()->windows()) {
-    if (!window || !window->m_isMapped)
+    if (!window || !window->mapped())
       continue;
 
     auto *watch = findWindow(window.get());
@@ -1254,7 +1263,7 @@ static void pollWindowGeometries() {
       continue;
 
     auto window = watch->window.lock();
-    if (!window || !window->m_isMapped)
+    if (!window || !window->mapped())
       continue;
 
     sendGeometry(watch.get(), window.get());
@@ -1306,7 +1315,7 @@ void window_management_init(void) {
 
   // Register windows that already exist before the plugin was loaded.
   for (const auto &window : Desktop::windowState()->windows()) {
-    if (window && window->m_isMapped)
+    if (window && window->mapped())
       registerWindow(window);
   }
 

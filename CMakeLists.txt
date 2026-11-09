@@ -9,7 +9,7 @@ project(
 
 # Hyprland is built with a modern C++ standard. Plugins share C++ objects with
 # Hyprland, so pick a standard compatible with the installed Hyprland headers.
-set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 

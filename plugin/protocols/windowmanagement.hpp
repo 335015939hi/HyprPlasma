@@ -1,7 +1,7 @@
 #ifndef _PROTOCOLS_WINDOWMANAGEMENT_HPP
 #define _PROTOCOLS_WINDOWMANAGEMENT_HPP
 
-#include <desktop/view/Window.hpp>
+#include <desktop/view/window/Window.hpp>
 
 namespace hyprplasma {
 namespace proto {

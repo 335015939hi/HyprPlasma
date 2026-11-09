@@ -2,7 +2,7 @@
 #define _PLASMAPROTO_SHELL_HPP
 
 #include <desktop/view/View.hpp>
-#include <desktop/view/Window.hpp>
+#include <desktop/view/window/Window.hpp>
 
 namespace hyprplasma {
 namespace proto {
