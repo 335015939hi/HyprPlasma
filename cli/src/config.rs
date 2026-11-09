@@ -1,47 +1,131 @@
-use serde::Deserialize;
+use anyhow::Result;
+use std::collections::HashMap;
+use std::process::Command;
+use std::sync::Mutex;
+use std::sync::OnceLock;
+use strum::Display;
+use strum::EnumString;
+use strum::VariantNames;
 
-#[derive(Debug, Deserialize)]
-pub struct Config {
-    pub lock_command: String,
-    pub logout_command: String,
-    pub logout_request_command: String,
-    pub shutdown_command: String,
-    pub shutdown_request_command: String,
-    pub reboot_command: String,
-    pub reboot_request_command: String,
-    pub switch_user_command: String,
-    pub session_action_request_command: String,
-    pub save_session_command: String,
-    pub logout_and_shutdown_command: String,
-    pub logout_and_reboot_command: String,
+#[derive(strum::VariantNames, Debug, Eq, Hash, PartialEq, Display, EnumString)]
+#[strum(serialize_all = "snake_case")]
+pub enum ConfigKeys {
+    LockCommand,
+    LogoutCommand,
+    ShutdownCommand,
+    RebootCommand,
+    SwitchUserCommand,
+    SaveSessionCommand,
+    LogoutAndShutdownCommand,
+    LogoutAndRebootCommand,
+    SessionActionsCommand,
 }
 
-pub fn load_config() -> Result<Config, config::ConfigError> {
-    let config_path = dirs::config_dir()
-        .expect("Cannot determine config directory")
-        .join("hypr")
-        .join("hyprplasma.toml");
-    println!("{}", config_path.display());
-    let mut config = config::Config::builder();
-    let default_commands = [
-        "lock_command",
-        "logout_command",
-        "logout_request_command",
-        "shutdown_command",
-        "shutdown_request_command",
-        "reboot_command",
-        "reboot_request_command",
-        "switch_user_command",
-        "session_action_request_command",
-        "save_session_command",
-        "logout_and_shutdown_command",
-        "logout_and_reboot_command",
-    ];
-    for key in default_commands {
-        config = config.set_default(key, format!("notify-send -a hyprplasma '{key} is unset'"))?;
+#[derive(Debug)]
+struct Config {
+    map: HashMap<ConfigKeys, String>,
+}
+
+static CONFIG: OnceLock<Mutex<Config>> = OnceLock::new();
+
+impl Config {
+    fn get_raw(&self, key: ConfigKeys) -> &str {
+        let val = self.map.get(&key);
+        match val {
+            Some(val) => val.as_str(),
+            None => {
+                let _ = Command::new("notify-send")
+                    .arg("-a")
+                    .arg("hyprplasma daemon")
+                    .arg(format!("config option '{key}' not found"))
+                    .status();
+                return "";
+            }
+        }
     }
-    config
-        .add_source(config::File::from(config_path).required(false))
-        .build()?
-        .try_deserialize()
+    fn get_as_str(&self, key: ConfigKeys) -> &str {
+        let val = self.map.get(&key);
+        match val {
+            Some(val) => {
+                if val.starts_with("str: ") {
+                    let val = val.split_at(5);
+                    return val.1;
+                }
+                return "";
+            }
+            None => {
+                let _ = Command::new("notify-send")
+                    .arg("-a")
+                    .arg("hyprplasma daemon")
+                    .arg(format!("config option '{key}' not found"))
+                    .status();
+                return "";
+            }
+        }
+    }
+
+    fn reload(&mut self) -> Result<()> {
+        let mut config: HashMap<ConfigKeys, String> = HashMap::new();
+        for key in ConfigKeys::VARIANTS {
+            let hyprkey = format!("plugin.hyprplasma.{key}");
+            let output = Command::new("hyprctl")
+                .arg("getoption")
+                .arg(&hyprkey)
+                .output()?;
+            if !output.status.success() {
+                let _ = Command::new("notify-send")
+                    .arg("-a")
+                    .arg("hyprplasma daemon")
+                    .arg(format!(
+                        "hyprctl getoption {hyprkey} failed:{}",
+                        output.status
+                    ))
+                    .spawn()?;
+            }
+            let mut value = String::new();
+            let output_str = String::from_utf8_lossy(&output.stdout);
+            let mut output: Vec<&str> = output_str.lines().collect();
+            if output.len() < 2 {
+                //hyprctl should print 'no such option' for non-existing options (one line). therefore
+                //if there are less than 2 lines something went wrong.
+                let _ = Command::new("notify-send")
+                    .arg("-a")
+                    .arg("hyprplasma daemon")
+                    .arg(format!("hyprctl getoption {hyprkey} failed:{}", output_str))
+                    .spawn()?;
+            }
+            output.pop();
+            for line in output {
+                if value.len() > 0 {
+                    value += "\n";
+                }
+                value += line;
+            }
+            config.insert(key.parse()?, value);
+        }
+
+        self.map = config;
+        Ok(())
+    }
+
+    fn load() -> Result<Self> {
+        let mut result = Config {
+            map: HashMap::new(),
+        };
+        result.reload()?;
+        Ok(result)
+    }
+}
+
+pub fn init() -> Result<()> {
+    CONFIG.set(Mutex::new(Config::load()?)).unwrap();
+    Ok(())
+}
+pub fn reload() -> Result<()> {
+    let mut config = CONFIG.get().unwrap().lock().unwrap();
+    config.reload()
+}
+pub fn get_as_str(key: ConfigKeys) -> String {
+    let config = CONFIG.get().unwrap().lock().unwrap();
+    config.get_as_str(key).into()
 }

@@ -68,6 +68,15 @@ if hl.plugin and hl.plugin.hyprplasma then
 			hyprplasma = {
 				-- when switching workspaces, cancel show desktop. this only works if plasmashell is running
 				cancel_showdesktop_on_workspaceswitch = true,
+				lock_command = "hyprlock",
+				logout_command = "kdialog --yesno 'Logout?' && hyprshutdown",
+				shutdown_command = "kdialog --yesno 'Shutdown?' && systemctl poweroff",
+				reboot_command = "kdialog --yesno 'Reboot?' && systemctl reboot",
+				switch_user_command = "notify-send -a 'hyprplasma daemon' 'switch user not implemented'",
+				save_session_command = "notify-send -a 'hyprplasma daemon' 'save session not implemented'",
+				logout_and_shutdown_command = "notify-send -a 'hyprplasma daemon' 'logout&shutdown not implemented'",
+				logout_and_reboot_command = "notify-send -a 'hyprplasma daemon' 'logout&reboot not implemented'",
+				session_actions_command = "notify-send -a 'hyprplasma daemon' 'session actions not implemented'",
 			},
 		},
 	})

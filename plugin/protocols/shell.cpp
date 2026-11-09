@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <debug/log/Logger.hpp>
 #include <desktop/DesktopTypes.hpp>
+#include <desktop/view/focusable/Focusable.hpp>
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/desktop/view/WLSurface.hpp>
 #include <hyprland/src/desktop/view/types/GeometricMovable.hpp>
@@ -38,6 +39,7 @@ struct PlasmaSurfaceState {
   bool positionSet = false;
   bool no_initial_focus = false;
   bool no_decorations = false;
+  bool no_focus = false;
   bool skip_taskbar = false;
   bool hide_when_showdesktop = true;
   bool will_cancel_showdesktop = true;
@@ -165,6 +167,12 @@ static bool openWindowListener_real(PHLWINDOW window) {
     // set no initial focus
     if (state->no_initial_focus) {
       window->m_state |= Desktop::View::WINDOW_STATE_NO_INITIAL_FOCUS;
+    }
+
+    // set no focus
+    if (state->no_focus) {
+      window->m_ruleApplicator->noFocus().set(
+          true, Desktop::Types::PRIORITY_SET_PROP);
     }
 
     cancel_showdesktop = state->will_cancel_showdesktop;
@@ -318,6 +326,7 @@ static void surfaceSetRole(wl_client *, wl_resource *resource, uint32_t role) {
     state->no_decorations = true;
     state->will_cancel_showdesktop = false;
     state->no_initial_focus = true;
+    state->no_focus = true;
     break;
   case ORG_KDE_PLASMA_SURFACE_ROLE_CRITICALNOTIFICATION: //=6
     state->hide_when_showdesktop = false;

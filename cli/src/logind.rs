@@ -10,8 +10,9 @@ use futures_util::StreamExt;
 use std::time::Duration;
 use tokio::process::Command;
 use tokio::time::timeout;
-use zbus::{Connection, Proxy};
-use zbus::zvariant::OwnedObjectPath;
+use zbus::Connection;
+use zbus::OwnedObjectPath;
+use zbus::Proxy;
 
 const LOGIND: &str = "org.freedesktop.login1";
 const MANAGER_PATH: &str = "/org/freedesktop/login1";
@@ -129,14 +130,9 @@ pub async fn run(lock_command: String) -> Result<()> {
         .await
         .context("failed to connect to the system D-Bus")?;
 
-    let manager = Proxy::new(
-        &connection,
-        LOGIND,
-        MANAGER_PATH,
-        MANAGER_IFACE,
-    )
-    .await
-    .context("failed to create logind Manager proxy")?;
+    let manager = Proxy::new(&connection, LOGIND, MANAGER_PATH, MANAGER_IFACE)
+        .await
+        .context("failed to create logind Manager proxy")?;
 
     // Prefer PID lookup so the daemon works even if XDG_SESSION_ID was not
     // propagated to its environment. Fall back to the standard session ID for
@@ -165,9 +161,7 @@ pub async fn run(lock_command: String) -> Result<()> {
         .receive_signal("PrepareForSleep")
         .await
         .context("failed to subscribe to logind PrepareForSleep")?;
-    let mut locked_hint_stream = session
-        .receive_property_changed::<bool>("LockedHint")
-        .await;
+    let mut locked_hint_stream = session.receive_property_changed::<bool>("LockedHint").await;
 
     let mut locked = session
         .get_property::<bool>("LockedHint")
@@ -185,7 +179,7 @@ pub async fn run(lock_command: String) -> Result<()> {
         tokio::select! {
             message = lock_stream.next() => {
                 let _message = message
-                    .context("logind Session.Lock stream closed")??;
+                    .context("logind Session.Lock stream closed")?;
 
                 println!("[logind] session lock requested");
                 locked = session
@@ -203,7 +197,7 @@ pub async fn run(lock_command: String) -> Result<()> {
 
             message = unlock_stream.next() => {
                 let _message = message
-                    .context("logind Session.Unlock stream closed")??;
+                    .context("logind Session.Unlock stream closed")?;
 
                 // Unlock is a request to the session's screen-lock client.
                 // Do not kill a locker or clear LockedHint here: the locker
@@ -213,7 +207,7 @@ pub async fn run(lock_command: String) -> Result<()> {
 
             message = sleep_stream.next() => {
                 let message = message
-                    .context("logind PrepareForSleep stream closed")??;
+                    .context("logind PrepareForSleep stream closed")?;
                 let preparing: bool = message
                     .body()
                     .deserialize()

@@ -1,5 +1,12 @@
-use crate::CONFIG;
+use crate::config;
+use crate::config::ConfigKeys;
 use anyhow::Result;
+use std::env;
+use std::io;
+use std::io::BufRead;
+use std::io::BufReader;
+use std::os::unix::net::UnixStream;
+use std::path::PathBuf;
 use std::process::Command;
 use std::process::ExitStatus;
 use zbus::connection;
@@ -10,7 +17,7 @@ use zbus::interface;
 
 struct LogoutPrompt;
 
-fn run_command(cmd: &String) -> Result<ExitStatus> {
+fn run_command(cmd: &str) -> Result<ExitStatus> {
     let status = Command::new("sh").arg("-c").arg(cmd).status()?;
     Ok(status)
 }
@@ -20,7 +27,7 @@ impl LogoutPrompt {
     #[zbus(name = "promptLogout")]
     fn prompt_logout(&self) {
         println!("[LogoutPrompt] Logout requested");
-        let cmd = &CONFIG.get().unwrap().logout_request_command;
+        let cmd = &config::get_as_str(ConfigKeys::LogoutCommand);
         let status = run_command(cmd).unwrap();
         println!("{cmd} exited with {status}");
     }
@@ -28,7 +35,7 @@ impl LogoutPrompt {
     #[zbus(name = "promptShutDown")]
     fn prompt_shutdown(&self) {
         println!("[LogoutPrompt] Shutdown requested");
-        let cmd = &CONFIG.get().unwrap().shutdown_request_command;
+        let cmd = &config::get_as_str(ConfigKeys::ShutdownCommand);
         let status = run_command(cmd).unwrap();
         println!("{cmd} exited with {status}");
     }
@@ -36,7 +43,7 @@ impl LogoutPrompt {
     #[zbus(name = "promptReboot")]
     fn prompt_reboot(&self) {
         println!("[LogoutPrompt] Reboot requested");
-        let cmd = &CONFIG.get().unwrap().reboot_request_command;
+        let cmd = &config::get_as_str(ConfigKeys::RebootCommand);
         let status = run_command(cmd).unwrap();
         println!("{cmd} exited with {status}");
     }
@@ -44,7 +51,7 @@ impl LogoutPrompt {
     #[zbus(name = "promptAll")]
     fn prompt_all(&self) {
         println!("[LogoutPrompt] Show all session actions");
-        let cmd = &CONFIG.get().unwrap().session_action_request_command;
+        let cmd = &config::get_as_str(ConfigKeys::SessionActionsCommand);
         let status = run_command(cmd).unwrap();
         println!("{cmd} exited with {status}");
     }
@@ -59,7 +66,7 @@ struct Shutdown;
 impl Shutdown {
     fn logout(&self) {
         println!("[Shutdown] Logout");
-        let cmd = &CONFIG.get().unwrap().logout_command;
+        let cmd = &config::get_as_str(ConfigKeys::LogoutCommand);
         let status = run_command(cmd).unwrap();
         println!("{cmd} exited with {status}");
     }
@@ -67,7 +74,7 @@ impl Shutdown {
     #[zbus(name = "logoutAndShutdown")]
     fn logout_and_shutdown(&self) {
         println!("[Shutdown] Logout and shutdown");
-        let cmd = &CONFIG.get().unwrap().logout_and_shutdown_command;
+        let cmd = &config::get_as_str(ConfigKeys::LogoutAndShutdownCommand);
         let status = run_command(cmd).unwrap();
         println!("{cmd} exited with {status}");
     }
@@ -75,7 +82,7 @@ impl Shutdown {
     #[zbus(name = "logoutAndReboot")]
     fn logout_and_reboot(&self) {
         println!("[Shutdown] Logout and reboot");
-        let cmd = &CONFIG.get().unwrap().logout_and_reboot_command;
+        let cmd = &config::get_as_str(ConfigKeys::LogoutAndRebootCommand);
         let status = run_command(cmd).unwrap();
         println!("{cmd} exited with {status}");
     }
@@ -83,7 +90,7 @@ impl Shutdown {
     #[zbus(name = "saveSession")]
     fn save_session(&self) {
         println!("[Shutdown] Save session");
-        let cmd = &CONFIG.get().unwrap().save_session_command;
+        let cmd = &config::get_as_str(ConfigKeys::SaveSessionCommand);
         let status = run_command(cmd).unwrap();
         println!("{cmd} exited with {status}");
     }
@@ -99,10 +106,48 @@ impl ScreenSaver {
     #[zbus(name = "Lock")]
     fn lock(&self) {
         println!("[ScreenSaver] Lock requested");
-        let cmd = &CONFIG.get().unwrap().lock_command;
+        let cmd = &config::get_as_str(ConfigKeys::LockCommand);
         let status = run_command(cmd).unwrap();
         println!("{cmd} exited with {status}");
     }
+}
+
+fn socket_path() -> io::Result<PathBuf> {
+    let runtime =
+        env::var("XDG_RUNTIME_DIR").map_err(|e| io::Error::new(io::ErrorKind::NotFound, e))?;
+
+    let instance = env::var("HYPRLAND_INSTANCE_SIGNATURE")
+        .map_err(|e| io::Error::new(io::ErrorKind::NotFound, e))?;
+
+    Ok(PathBuf::from(runtime)
+        .join("hypr")
+        .join(instance)
+        .join(".socket2.sock"))
+}
+
+async fn config_watcher() -> Result<()> {
+    let stream = UnixStream::connect(socket_path()?)?;
+    let mut reader = BufReader::new(stream);
+    let mut line = String::new();
+
+    loop {
+        line.clear();
+
+        if reader.read_line(&mut line)? == 0 {
+            break;
+        }
+
+        if let Some((event, _data)) = line.trim_end().split_once(">>") {
+            match event {
+                "configreloaded" => {
+                    println!("Hyprland configuration reloaded");
+                    let _ = config::reload();
+                }
+                _ => {}
+            }
+        }
+    }
+    Ok(())
 }
 
 #[tokio::main]
@@ -128,12 +173,14 @@ pub async fn daemon() -> Result<()> {
         .build()
         .await?;
 
-    let lock_command = CONFIG.get().unwrap().lock_command.clone();
+    let lock_command = config::get_as_str(ConfigKeys::LockCommand);
     let _logind_task = tokio::spawn(async move {
         if let Err(error) = crate::logind::run(lock_command).await {
             eprintln!("[logind] integration stopped: {error:#}");
         }
     });
+
+    let _config_watch = config_watcher().await?;
 
     println!("HyprPlasma session services registered");
 
