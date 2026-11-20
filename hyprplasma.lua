@@ -1,9 +1,10 @@
 -- environment variables
 local function update_env()
 	local home = os.getenv("HOME")
-	hl.env("QT_QPA_PLATFORMTHEME", "kde")
-	hl.env("QT_QPA_PLATFORM", "wayland;xcb")
-	hl.env("GDK_BACKEND", "wayland,x11,*")
+	--hl.env("QT_QPA_PLATFORMTHEME", "kde")
+	--hl.env("QT_QPA_PLATFORM", "wayland;xcb")
+	--hl.env("GDK_BACKEND", "wayland,x11,*")
+	hl.env("QT_WAYLAND_RECONNECT", "1")
 	hl.env("XDG_CONFIG_DIRS", home .. "/.config/kdedefaults:/etc/xdg:/usr/share/desktop-base/kf5-settings")
 	hl.env(
 		"XDG_DATA_DIRS",
@@ -14,17 +15,20 @@ local function update_env()
 	hl.env("XKB_DEFAULT_MODEL", "pc105")
 	hl.env("XDG_BACKEND", "wayland")
 	hl.env("XDG_CURRENT_DESKTOP", "KDE")
+	hl.env("XDG_MEUN_PREFIX", "plasma-")
 	hl.env("XDG_SESSION_TYPE", "wayland")
+	hl.env("GTK2_RC_FILES", "/etc/gtk-2.0/gtkrc:" .. home .. "/.gtkrc-2.0:" .. home .. ".config/gtkrc-2.0")
+	hl.env("GTK_RC_FILES", "/etc/gtk/gtkrc:" .. home .. "/.gtkrc:" .. home .. "/.config/gtkrc")
 	hl.env("XDG_SESSION_DESKTOP", "KDE")
 	hl.env("DESKTOP_SESSION", "plasma")
 	hl.env("KDE_APPLICATIONS_AS_SCOPE", "1")
 	hl.env("KDE_FULL_SESSION", "true")
 	hl.env("KDE_SESSION_VERSION", "6")
 	hl.env("KGLOBALACCELD_PLATFORM", "org.kde.kwin")
-
-	--os.execute(
-	--	"dbus-update-activation-environment --systemd --all || notify-send -a hyprland 'dbus-update-activation-environment failed'"
-	--)
+	hl.env("KDE_SESSION_UID", os.getenv("UID"))
+	os.execute(
+		"dbus-update-activation-environment --systemd --all || notify-send -a hyprland 'dbus-update-activation-environment failed'"
+	)
 	--hl.exec_cmd(
 	--	"dbus-update-activation-environment --systemd "
 	--		.. "DISPLAY "
