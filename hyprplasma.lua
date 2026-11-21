@@ -25,7 +25,6 @@ local function update_env()
 	hl.env("KDE_FULL_SESSION", "true")
 	hl.env("KDE_SESSION_VERSION", "6")
 	hl.env("KGLOBALACCELD_PLATFORM", "org.kde.kwin")
-	hl.env("KDE_SESSION_UID", os.getenv("UID"))
 	os.execute(
 		"dbus-update-activation-environment --systemd --all || notify-send -a hyprland 'dbus-update-activation-environment failed'"
 	)
