@@ -8,7 +8,7 @@ use strum::Display;
 use strum::EnumString;
 use strum::VariantNames;
 
-#[derive(strum::VariantNames, Debug, Eq, Hash, PartialEq, Display, EnumString)]
+#[derive(strum::VariantNames, Debug, Eq, Hash, PartialEq, Display, EnumString, Clone, Copy)]
 #[strum(serialize_all = "snake_case")]
 pub enum ConfigKeys {
     LockCommand,
@@ -20,6 +20,7 @@ pub enum ConfigKeys {
     LogoutAndShutdownCommand,
     LogoutAndRebootCommand,
     SessionActionsCommand,
+    LockOnSleep,
 }
 
 #[derive(Debug)]
@@ -41,23 +42,24 @@ impl Config {
         }
     }
     fn get_as_str(&self, key: ConfigKeys) -> &str {
-        let val = self.map.get(&key);
-        match val {
-            Some(val) => {
-                if val.starts_with("str: ") {
-                    let val = val.split_at(5);
-                    return val.1;
-                }
-                return "";
-            }
-            None => {
-                let _ = Command::new("notify-send")
-                    .arg("-a")
-                    .arg("hyprplasma daemon")
-                    .arg(format!("config option '{key}' not found"))
-                    .status();
-                return "";
-            }
+        let val = self.get_raw(key);
+        if val.starts_with("str: ") {
+            let val = val.split_at(5);
+            return val.1;
+        } else {
+            notify_send(format!("config {key} is not a string",).as_str());
+            return "";
+        }
+    }
+    fn get_as_bool(&self, key: ConfigKeys) -> bool {
+        let val = self.get_raw(key);
+        if val == "bool: true" {
+            return true;
+        } else if val == "bool: false" {
+            return false;
+        } else {
+            notify_send(format!("config {key} is not a boolean",).as_str());
+            return false;
         }
     }
 
@@ -121,4 +123,8 @@ pub fn reload() -> Result<()> {
 pub fn get_as_str(key: ConfigKeys) -> String {
     let config = CONFIG.get().unwrap().lock().unwrap();
     config.get_as_str(key).into()
+}
+pub fn get_as_bool(key: ConfigKeys) -> bool {
+    let config = CONFIG.get().unwrap().lock().unwrap();
+    config.get_as_bool(key)
 }

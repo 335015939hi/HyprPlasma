@@ -5,11 +5,11 @@
 //! running, released only after the configured lock command has been started,
 //! and reacquired after resume.
 
+use crate::config;
 use anyhow::{Context, Result, anyhow, bail};
 use futures_util::StreamExt;
 use std::time::Duration;
 use tokio::process::Command;
-use tokio::time::timeout;
 use zbus::Connection;
 use zbus::OwnedObjectPath;
 use zbus::Proxy;
@@ -22,7 +22,6 @@ const SESSION_IFACE: &str = "org.freedesktop.login1.Session";
 // Logind's default InhibitDelayMaxSec is five seconds. Waiting less than that
 // gives the locker time to create its lock surface without holding up sleep
 // for the whole delay window.
-const LOCK_STARTUP_GRACE: Duration = Duration::from_millis(750);
 
 async fn get_session_path(manager: &Proxy<'_>) -> Result<OwnedObjectPath> {
     match manager
@@ -70,10 +69,7 @@ async fn set_locked_hint(session: &Proxy<'static>, locked: bool) -> Result<()> {
 }
 
 /// Launch the configured locker without blocking the daemon until the user
-/// unlocks. Short-lived commands are treated as lock requests (for example,
-/// a command that asks another process to display the lock screen). A
-/// long-running locker process is reaped in the background and clears
-/// LockedHint when it exits.
+/// unlocks.
 async fn start_lock_command(session: &Proxy<'static>, command: &str) -> Result<()> {
     if command.trim().is_empty() {
         bail!("lock_command is empty");
@@ -85,42 +81,24 @@ async fn start_lock_command(session: &Proxy<'static>, command: &str) -> Result<(
         .spawn()
         .with_context(|| format!("failed to start lock_command: {command}"))?;
 
-    match timeout(LOCK_STARTUP_GRACE, child.wait()).await {
-        Ok(status) => {
-            let status = status.context("failed waiting for lock_command")?;
-            if !status.success() {
-                bail!("lock_command exited unsuccessfully: {status}");
+    set_locked_hint(session, true).await?;
+
+    let session = session.clone();
+    tokio::spawn(async move {
+        match child.wait().await {
+            Ok(status) if !status.success() => {
+                eprintln!("[logind] lock process exited unsuccessfully: {status}");
             }
-
-            // A successful one-shot command is assumed to have handed the
-            // request to the screen locker. The locker should clear this hint
-            // when authentication unlocks the session.
-            set_locked_hint(session, true).await?;
+            Err(error) => {
+                eprintln!("[logind] failed waiting for lock process: {error}");
+            }
+            _ => {}
         }
-        Err(_) => {
-            // A command that remains running is likely the locker itself.
-            // Mark the session locked after the startup grace period, then
-            // clear the hint once that process exits.
-            set_locked_hint(session, true).await?;
 
-            let session = session.clone();
-            tokio::spawn(async move {
-                match child.wait().await {
-                    Ok(status) if !status.success() => {
-                        eprintln!("[logind] lock process exited unsuccessfully: {status}");
-                    }
-                    Err(error) => {
-                        eprintln!("[logind] failed waiting for lock process: {error}");
-                    }
-                    _ => {}
-                }
-
-                if let Err(error) = set_locked_hint(&session, false).await {
-                    eprintln!("[logind] failed to clear LockedHint after unlock: {error:#}");
-                }
-            });
+        if let Err(error) = set_locked_hint(&session, false).await {
+            eprintln!("[logind] failed to clear LockedHint after unlock: {error:#}");
         }
-    }
+    });
 
     Ok(())
 }
