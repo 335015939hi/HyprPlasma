@@ -12,6 +12,7 @@ namespace config {
 struct SPluginConfig {
   SP<Config::Values::CStringValue> logout_command;
   SP<Config::Values::CStringValue> lock_command;
+  SP<Config::Values::CBoolValue> lock_on_sleep;
   SP<Config::Values::CStringValue> reboot_command;
   SP<Config::Values::CStringValue> shutdown_command;
   SP<Config::Values::CStringValue> switch_user_command;

@@ -1,5 +1,6 @@
 use crate::config;
 use crate::config::ConfigKeys;
+use crate::screen_saver::ScreenSaver;
 use anyhow::Result;
 use std::env;
 use std::io;
@@ -11,6 +12,7 @@ use std::process::Command;
 use std::process::ExitStatus;
 use zbus::connection;
 use zbus::interface;
+use zbus::Connection;
 
 // org.kde.LogoutPrompt
 // Object path: /LogoutPrompt
@@ -96,22 +98,6 @@ impl Shutdown {
     }
 }
 
-// org.freedesktop.ScreenSaver
-// Object path: /ScreenSaver
-
-struct ScreenSaver;
-
-#[interface(name = "org.freedesktop.ScreenSaver")]
-impl ScreenSaver {
-    #[zbus(name = "Lock")]
-    fn lock(&self) {
-        println!("[ScreenSaver] Lock requested");
-        let cmd = &config::get_as_str(ConfigKeys::LockCommand);
-        let status = run_command(cmd).unwrap();
-        println!("{cmd} exited with {status}");
-    }
-}
-
 fn socket_path() -> io::Result<PathBuf> {
     let runtime =
         env::var("XDG_RUNTIME_DIR").map_err(|e| io::Error::new(io::ErrorKind::NotFound, e))?;
@@ -166,16 +152,23 @@ pub async fn daemon() -> Result<()> {
         .build()
         .await?;
 
-    // Register ScreenSaver
-    let _screen_saver = connection::Builder::session()
-        .name("org.freedesktop.ScreenSaver")
-        .serve_at("/ScreenSaver", ScreenSaver)
-        .build()
+    // Register ScreenSaver on the same connection used to emit ActiveChanged.
+    let screen_saver_connection = Connection::session().await?;
+    let screen_saver = ScreenSaver::new(
+        config::get_as_str(ConfigKeys::LockCommand),
+        screen_saver_connection.clone(),
+    );
+    screen_saver_connection
+        .object_server()
+        .at("/ScreenSaver", screen_saver.clone())
+        .await?;
+    screen_saver_connection
+        .request_name("org.freedesktop.ScreenSaver")
         .await?;
 
-    let lock_command = config::get_as_str(ConfigKeys::LockCommand);
+    let logind_screen_saver = screen_saver.clone();
     let _logind_task = tokio::spawn(async move {
-        if let Err(error) = crate::logind::run(lock_command).await {
+        if let Err(error) = crate::logind::run(logind_screen_saver).await {
             eprintln!("[logind] integration stopped: {error:#}");
         }
     });

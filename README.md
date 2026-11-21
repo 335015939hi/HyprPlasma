@@ -53,13 +53,29 @@ It also listens for `PrepareForSleep`, holds a sleep delay inhibitor while
 the session is active, and releases it after the configured `lock_command`
 has been started. The inhibitor is reacquired after resume.
 
-Configure `lock_command` in `~/.config/hypr/hyprplasma.toml` to invoke your
-screen locker. Do not set it to `loginctl lock-session`: that command is the
-request which triggers this integration and would just feed back into itself.
-The daemon updates logind's `LockedHint` after starting the command. A
-long-running locker process is monitored and clears the hint when it exits;
-a short-lived launcher should ensure the locker itself clears `LockedHint`
-when the user unlocks.
+Configure `lock_command` and `lock_on_sleep` in the Hyprland plugin
+configuration in `hyprplasma.lua`. The default lock command is `hyprlock`
+and `lock_on_sleep` defaults to true. Do not set `lock_command` to
+`loginctl lock-session`: that command is the request which triggers this
+integration and would feed back into itself.
+
+The daemon exports `org.freedesktop.ScreenSaver`, including `Lock()`,
+`GetActive()`, and `ActiveChanged`. D-Bus lock requests and logind lock
+requests use the same non-blocking locker launcher. The daemon updates
+logind's `LockedHint` when the locker starts and clears it when the locker
+process exits.
+
+HyprPlasma reads KScreenLocker's `[Daemon]` `Autolock` and `Timeout`
+settings from `kscreenlockerrc` at session startup. When automatic locking is
+enabled, the configured timeout triggers `loginctl lock-session`, which
+starts the configured locker. `Timeout` is in minutes. Restart the Hyprland
+session after changing these settings so the idle action is re-registered.
+
+PowerDevil remains responsible for the automatic suspend timeout and sleep
+mode. Hyprland's idle-notification protocol continues to provide idle time
+while Hyprlock is displayed. Before logind proceeds with a suspend request,
+HyprPlasma waits one second after starting a new lock process so Hyprlock has
+time to render its first frame, then releases its sleep-delay inhibitor.
 
 ## Bugs
 

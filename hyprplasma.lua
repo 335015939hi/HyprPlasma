@@ -42,6 +42,72 @@ local function update_env()
 	--)
 end
 
+local function setup_plasma_autolock()
+    local hp = hl.plugin and hl.plugin.hyprplasma
+    if not hp then
+        return
+    end
+
+    -- KScreenLocker stores its automatic-lock settings in kscreenlockerrc.
+    -- Timeout is expressed in minutes. These are KScreenLocker's defaults.
+    local config_home = os.getenv("XDG_CONFIG_HOME")
+    if not config_home or config_home == "" then
+        config_home = (os.getenv("HOME") or "") .. "/.config"
+    end
+
+    local autolock = true
+    local timeout_minutes = 5
+    local file = io.open(config_home .. "/kscreenlockerrc", "r")
+
+    if file then
+        local in_daemon_group = false
+
+        for raw_line in file:lines() do
+            local line = raw_line:gsub("^%s+", ""):gsub("%s+$", "")
+
+            if line ~= "" and not line:match("^[#;]") then
+                local section = line:match("^%[([^%]]+)%]$")
+                if section then
+                    in_daemon_group = section == "Daemon"
+                elseif in_daemon_group then
+                    local key, value = line:match("^([^=]+)=(.*)$")
+                    if key then
+                        key = key:gsub("%s+$", "")
+                        value = value:gsub("^%s+", ""):gsub("%s+$", "")
+
+                        if key == "Autolock" then
+                            value = value:lower()
+                            autolock = value == "true" or value == "1" or value == "yes"
+                        elseif key == "Timeout" then
+                            timeout_minutes = tonumber(value) or timeout_minutes
+                        end
+                    end
+                end
+            end
+        end
+
+        file:close()
+    end
+
+    if not autolock or timeout_minutes <= 0 then
+        print("[hyprplasma] Plasma automatic screen lock is disabled")
+        return
+    end
+
+    local timeout_ms = math.floor(timeout_minutes * 60 * 1000 + 0.5)
+    if timeout_ms > 4294967295 then
+        print("[hyprplasma] Plasma automatic-lock timeout is too large")
+        return
+    end
+
+    local id, err = hp.idle_add_action(timeout_ms, "loginctl lock-session")
+    if id then
+        print("[hyprplasma] registered Plasma automatic lock after " .. timeout_minutes .. " minute(s)")
+    else
+        print("[hyprplasma] failed to register Plasma automatic lock: " .. tostring(err))
+    end
+end
+
 hl.on("hyprland.start", function()
 	update_env()
 	--plasmashell.
@@ -62,6 +128,9 @@ hl.on("hyprland.start", function()
 	hl.exec_cmd("exec gmenudbusmenuproxy")
 	hl.exec_cmd("exec kded6")
 	hl.exec_cmd("exec /usr/lib/x86_64-linux-gnu/libexec/kglobalacceld")
+
+    -- Let the existing Plasma Screen Locking settings drive Hyprlock.
+    setup_plasma_autolock()
 end)
 
 if hl.plugin and hl.plugin.hyprplasma then
@@ -72,6 +141,7 @@ if hl.plugin and hl.plugin.hyprplasma then
 				-- when switching workspaces, cancel show desktop. this only works if plasmashell is running
 				cancel_showdesktop_on_workspaceswitch = true,
 				lock_command = "hyprlock",
+				lock_on_sleep = true,
 				logout_command = "kdialog --yesno 'Logout?' && hyprshutdown",
 				shutdown_command = "kdialog --yesno 'Shutdown?' && systemctl poweroff",
 				reboot_command = "kdialog --yesno 'Reboot?' && systemctl reboot",
@@ -83,6 +153,12 @@ if hl.plugin and hl.plugin.hyprplasma then
 			},
 		},
 	})
+end
+
+if hl.plugin and hl.plugin.hyprplasma then
+    hl.on("plugin.hyprplasma.idle_action", function(action_id, command)
+        hl.exec_cmd("exec " .. command)
+    end)
 end
 
 --opening a window on empty workspace may keep focus on the desktop instead of focusing the window. this fixes it

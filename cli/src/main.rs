@@ -6,6 +6,7 @@ use std::process::Command;
 mod config;
 mod daemon;
 mod logind;
+mod screen_saver;
 
 #[derive(Parser)]
 struct Args {

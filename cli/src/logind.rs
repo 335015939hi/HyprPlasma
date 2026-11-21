@@ -5,11 +5,11 @@
 //! running, released only after the configured lock command has been started,
 //! and reacquired after resume.
 
-use crate::config;
-use anyhow::{Context, Result, anyhow, bail};
+use crate::config::{self, ConfigKeys};
+use crate::screen_saver::ScreenSaver;
+use anyhow::{Context, Result, anyhow};
 use futures_util::StreamExt;
 use std::time::Duration;
-use tokio::process::Command;
 use zbus::Connection;
 use zbus::OwnedObjectPath;
 use zbus::Proxy;
@@ -19,9 +19,9 @@ const MANAGER_PATH: &str = "/org/freedesktop/login1";
 const MANAGER_IFACE: &str = "org.freedesktop.login1.Manager";
 const SESSION_IFACE: &str = "org.freedesktop.login1.Session";
 
-// Logind's default InhibitDelayMaxSec is five seconds. Waiting less than that
-// gives the locker time to create its lock surface without holding up sleep
-// for the whole delay window.
+// Give Hyprlock a full second after process creation to render its first frame.
+// This is comfortably below logind's default InhibitDelayMaxSec of five seconds.
+const SLEEP_LOCK_RENDER_GRACE: Duration = Duration::from_secs(1);
 
 async fn get_session_path(manager: &Proxy<'_>) -> Result<OwnedObjectPath> {
     match manager
@@ -60,50 +60,7 @@ async fn acquire_sleep_inhibitor(manager: &Proxy<'_>) -> Result<zbus::OwnedFd> {
         .context("failed to acquire logind sleep delay inhibitor")
 }
 
-async fn set_locked_hint(session: &Proxy<'static>, locked: bool) -> Result<()> {
-    let _: () = session
-        .call("SetLockedHint", &(locked,))
-        .await
-        .context("failed to update logind LockedHint")?;
-    Ok(())
-}
-
-/// Launch the configured locker without blocking the daemon until the user
-/// unlocks.
-async fn start_lock_command(session: &Proxy<'static>, command: &str) -> Result<()> {
-    if command.trim().is_empty() {
-        bail!("lock_command is empty");
-    }
-
-    let mut child = Command::new("sh")
-        .arg("-c")
-        .arg(command)
-        .spawn()
-        .with_context(|| format!("failed to start lock_command: {command}"))?;
-
-    set_locked_hint(session, true).await?;
-
-    let session = session.clone();
-    tokio::spawn(async move {
-        match child.wait().await {
-            Ok(status) if !status.success() => {
-                eprintln!("[logind] lock process exited unsuccessfully: {status}");
-            }
-            Err(error) => {
-                eprintln!("[logind] failed waiting for lock process: {error}");
-            }
-            _ => {}
-        }
-
-        if let Err(error) = set_locked_hint(&session, false).await {
-            eprintln!("[logind] failed to clear LockedHint after unlock: {error:#}");
-        }
-    });
-
-    Ok(())
-}
-
-pub async fn run(lock_command: String) -> Result<()> {
+pub async fn run(screen_saver: ScreenSaver) -> Result<()> {
     let connection = Connection::system()
         .await
         .context("failed to connect to the system D-Bus")?;
@@ -145,6 +102,7 @@ pub async fn run(lock_command: String) -> Result<()> {
         .get_property::<bool>("LockedHint")
         .await
         .unwrap_or(false);
+    screen_saver.sync_active_state(locked).await;
 
     let mut sleep_inhibitor = Some(acquire_sleep_inhibitor(&manager).await?);
 
@@ -166,7 +124,7 @@ pub async fn run(lock_command: String) -> Result<()> {
                     .unwrap_or(locked);
 
                 if !locked {
-                    match start_lock_command(&session, &lock_command).await {
+                    match screen_saver.start(Duration::ZERO).await {
                         Ok(()) => locked = true,
                         Err(error) => eprintln!("[logind] failed to start lock screen: {error:#}"),
                     }
@@ -198,9 +156,9 @@ pub async fn run(lock_command: String) -> Result<()> {
                         .await
                         .unwrap_or(locked);
 
-                    if !locked {
-                        match start_lock_command(&session, &lock_command).await {
-                            Ok(()) => locked = true,
+                    if config::get_as_bool(ConfigKeys::LockOnSleep) && !locked {
+                        match screen_saver.start(SLEEP_LOCK_RENDER_GRACE).await {
+                            Ok(()) => locked = screen_saver.is_active(),
                             Err(error) => {
                                 // Do not keep the machine awake indefinitely if
                                 // the configured locker cannot be started.
@@ -231,6 +189,7 @@ pub async fn run(lock_command: String) -> Result<()> {
                 match change.get().await {
                     Ok(value) => {
                         locked = value;
+                        screen_saver.sync_active_state(value).await;
                         println!("[logind] LockedHint={locked}");
                     }
                     Err(error) => {

@@ -24,6 +24,10 @@ void init() {
       CONFIG_PREFIX "lock_command", "Command to run to lock screen from plasma",
       "");
 
+  g_config.lock_on_sleep = makeShared<Config::Values::CBoolValue>(
+      CONFIG_PREFIX "lock_on_sleep", "Lock the session before system suspend",
+      true);
+
   g_config.reboot_command = makeShared<Config::Values::CStringValue>(
       CONFIG_PREFIX "reboot_command", "Command to run to reboot from plasma",
       "");
@@ -58,6 +62,8 @@ void init() {
           g_config.logout_command),
       Hyprutils::Memory::dynamicPointerCast<Config::Values::IValue>(
           g_config.lock_command),
+      Hyprutils::Memory::dynamicPointerCast<Config::Values::IValue>(
+          g_config.lock_on_sleep),
       Hyprutils::Memory::dynamicPointerCast<Config::Values::IValue>(
           g_config.reboot_command),
       Hyprutils::Memory::dynamicPointerCast<Config::Values::IValue>(
