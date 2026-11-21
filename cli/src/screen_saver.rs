@@ -226,9 +226,12 @@ impl ScreenSaver {
             self.start(Duration::ZERO)
                 .await
                 .map_err(|error| zbus::fdo::Error::Failed(error.to_string()))?;
+            Ok(true)
+        } else {
+            // The ScreenSaver API's SetActive(false) request does not unlock;
+            // KScreenLocker likewise returns false for this unsupported action.
+            Ok(false)
         }
-
-        Ok(self.is_active())
     }
 
     #[zbus(signal)]
