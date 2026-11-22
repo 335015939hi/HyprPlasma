@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use tokio::process::Command;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::time::sleep;
-use zbus::{Connection, Proxy, interface, object_server::SignalEmitter};
+use zbus::{Connection, OwnedObjectPath, Proxy, interface, object_server::SignalEmitter};
 
 const LOGIND: &str = "org.freedesktop.login1";
 const MANAGER_PATH: &str = "/org/freedesktop/login1";
@@ -162,7 +162,7 @@ async fn set_logind_locked_hint(locked: bool) -> Result<()> {
         .await
         .context("failed to create logind Manager proxy")?;
 
-    let session_path = match manager
+    let session_path: OwnedObjectPath = match manager
         .call("GetSessionByPID", &(std::process::id(),))
         .await
     {
